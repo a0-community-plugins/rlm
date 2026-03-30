@@ -1,0 +1,18 @@
+auto_enabled: true
+manual_tool_enabled: true
+trigger_threshold_pct: 0.8
+min_block_chars: 4000
+attachment_max_chars: 2000000
+environment_mode: auto
+docker_image: python:3.11-slim
+max_depth: 2
+max_iterations: 20
+max_budget: 0.0
+max_timeout: 120.0
+max_tokens: 0
+max_errors: 3
+max_concurrent_subcalls: 4
+subcall_model_source: utility
+persistence_enabled: true
+retention_count: 25
+

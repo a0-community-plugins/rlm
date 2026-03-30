@@ -1,0 +1,296 @@
+<html>
+<head>
+    <title>RLM Context</title>
+</head>
+
+<body>
+    <div x-data>
+        <template x-if="config">
+            <div>
+                <div class="section-title">RLM Context</div>
+                <div class="section-description">
+                    Route oversized external context through Recursive Language Models while keeping the normal Agent Zero loop in control.
+                </div>
+
+                <div class="section-title">How this fits into Agent Zero</div>
+                <div class="section-description">
+                    Agent Zero stays in control. This plugin only steps in when a turn includes bulky external context that should be offloaded and analyzed recursively.
+                </div>
+
+                <details class="field">
+                    <summary class="field-title">Expand for examples and behavior notes</summary>
+                    <div class="field-description" style="margin-top: 0.5rem;">
+                        Auto-routing is best for large logs, big tool output, and many attached docs. The <code>rlm_context</code> tool is the explicit path when the agent wants long-context analysis on purpose. Ordinary short turns should stay on the normal model path.
+                    </div>
+                </details>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Automatic routing</div>
+                        <div class="field-description">
+                            Enable hybrid auto-routing when large external context would otherwise crowd out the visible prompt.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <label class="toggle">
+                            <input type="checkbox" x-model="config.auto_enabled" />
+                            <span class="toggler"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Manual tool enabled</div>
+                        <div class="field-description">
+                            Allow the agent to invoke the <code>rlm_context</code> tool explicitly for focused long-context analysis.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <label class="toggle">
+                            <input type="checkbox" x-model="config.manual_tool_enabled" />
+                            <span class="toggler"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Framework dependency install</div>
+                        <div class="field-description">
+                            Install, upgrade, or repair the pinned upstream RLM dependency in the Agent Zero framework runtime. This is the same runtime used by the plugin backend and the plugin list Execute action.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <button class="btn btn-field"
+                                @click="(async () => { const { store } = await import('/components/plugins/list/plugin-execute-store.js'); await store.open({ name: 'rlm_context', display_name: 'RLM Context' }); })()">
+                            Install Dependencies
+                        </button>
+                    </div>
+                </div>
+
+                <div class="section-title">Triggering</div>
+                <div class="section-description">
+                    Decide when the plugin should replace large external payloads with placeholders and offload those blocks into an RLM run.
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Trigger threshold</div>
+                        <div class="field-description">
+                            Portion of the configured chat context length that must be reached before auto-routing is considered.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="range" min="0.1" max="0.99" step="0.01" x-model.number="config.trigger_threshold_pct" />
+                        <span class="range-value" x-text="config.trigger_threshold_pct"></span>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Minimum block size</div>
+                        <div class="field-description">
+                            Minimum number of characters required before a message field or tool result becomes eligible for offloading.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="200" step="100" x-model.number="config.min_block_chars" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Attachment scan cap</div>
+                        <div class="field-description">
+                            Maximum number of attachment characters to read into the offloaded context for each text file.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="1000" step="1000" x-model.number="config.attachment_max_chars" />
+                    </div>
+                </div>
+
+                <div class="section-title">Execution</div>
+                <div class="section-description">
+                    Configure how the recursive worker runs and where it executes.
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Environment mode</div>
+                        <div class="field-description">
+                            Auto prefers Docker when available, otherwise local REPL execution. Docker mode falls back cleanly if it is unavailable.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <select x-model="config.environment_mode">
+                            <option value="auto">Auto</option>
+                            <option value="local">Local</option>
+                            <option value="docker">Docker</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field" x-show="config.environment_mode !== 'local'">
+                    <div class="field-label">
+                        <div class="field-title">Docker image</div>
+                        <div class="field-description">
+                            Container image used when the RLM environment resolves to Docker.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="text" x-model="config.docker_image" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Subcall model source</div>
+                        <div class="field-description">
+                            Prefer the configured utility model for recursive subcalls when it maps cleanly to an RLM backend.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <select x-model="config.subcall_model_source">
+                            <option value="utility">Utility</option>
+                            <option value="root">Root</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Maximum depth</div>
+                        <div class="field-description">
+                            Maximum recursion depth for decomposing large context into smaller reasoning steps.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="1" step="1" x-model.number="config.max_depth" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Maximum iterations</div>
+                        <div class="field-description">
+                            Hard stop on total RLM iterations across the run.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="1" step="1" x-model.number="config.max_iterations" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Maximum timeout (seconds)</div>
+                        <div class="field-description">
+                            Total runtime limit for an RLM execution before it gives up and Agent Zero falls back.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="0" step="1" x-model.number="config.max_timeout" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Maximum budget</div>
+                        <div class="field-description">
+                            Optional budget cap for the recursive run. Use 0 to disable budget enforcement.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="0" step="0.01" x-model.number="config.max_budget" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Maximum output tokens</div>
+                        <div class="field-description">
+                            Optional token ceiling for the RLM response. Use 0 to keep the backend default.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="0" step="1" x-model.number="config.max_tokens" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Maximum errors</div>
+                        <div class="field-description">
+                            Number of recoverable subcall or REPL errors permitted before the run is aborted.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="0" step="1" x-model.number="config.max_errors" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Maximum concurrent subcalls</div>
+                        <div class="field-description">
+                            Limit recursive fan-out so the run stays bounded and easier to inspect.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="1" step="1" x-model.number="config.max_concurrent_subcalls" />
+                    </div>
+                </div>
+
+                <div class="section-title">Persistence</div>
+                <div class="section-description">
+                    Save recent trajectories so you can inspect recursive runs from the dashboard.
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Persistence enabled</div>
+                        <div class="field-description">
+                            Store run summaries and trajectory payloads inside the plugin-owned data directory.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <label class="toggle">
+                            <input type="checkbox" x-model="config.persistence_enabled" />
+                            <span class="toggler"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Retention count</div>
+                        <div class="field-description">
+                            Number of recent runs to keep on disk before older entries are pruned.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="0" step="1" x-model.number="config.retention_count" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">RLM explorer</div>
+                        <div class="field-description">
+                            Open the run explorer to inspect environment readiness, recent executions, and stored trajectories.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <button class="btn btn-field" @click="openModal('/plugins/rlm_context/webui/main.html')">
+                            Open Explorer
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,826 @@
+<html>
+<head>
+    <title>RLM Context Explorer</title>
+    <script type="module">
+        import { store } from "/plugins/rlm_context/webui/rlm-context-store.js";
+    </script>
+</head>
+
+<body>
+    <div x-data x-init="await $store.rlmContextDashboard.onOpen()">
+        <template x-if="$store.rlmContextDashboard">
+            <div class="rlm-context-dashboard">
+                <div class="rcd-header">
+                    <div>
+                        <div class="field-title" style="font-size: 1rem;">RLM Context Explorer</div>
+                        <div class="field-description">
+                            Inspect backend readiness, recent recursive runs, and saved trajectory payloads.
+                        </div>
+                    </div>
+                    <div class="rcd-header-actions">
+                        <button class="btn btn-field" @click="$store.rlmContextDashboard.loadStatus()">
+                            Refresh Status
+                        </button>
+                        <button class="btn btn-field" @click="$store.rlmContextDashboard.openDependencyInstaller()">
+                            Install Dependencies
+                        </button>
+                        <button class="btn btn-field" @click="$store.rlmContextDashboard.loadRuns()">
+                            Refresh Runs
+                        </button>
+                        <button class="btn btn-delete"
+                                :disabled="$store.rlmContextDashboard.pruning"
+                                @click="$confirmClick($event, () => $store.rlmContextDashboard.pruneRuns(0))">
+                            Clear Runs
+                        </button>
+                    </div>
+                </div>
+
+                <section class="rcd-card">
+                    <div class="rcd-card-title">Quick Summary</div>
+                    <div class="rcd-readiness-copy">
+                        Agent Zero only uses RLM when a turn includes bulky external context such as large attachments, long logs, or oversized tool output. It offloads that material, lets RLM inspect it recursively, then returns a normal answer back into the usual agent loop.
+                    </div>
+                    <details class="rcd-readiness-shell">
+                        <summary class="rcd-mini-label">Expand for examples and behavior notes</summary>
+                        <div class="rcd-readiness-copy" style="margin-top: 0.5rem;">
+                            Auto-routing is mostly invisible. The <code>rlm_context</code> tool is the explicit path. The explorer is where users can inspect iterations and subcalls when they want to verify what happened.
+                        </div>
+                        <div class="rcd-section">
+                            <div class="rcd-subtitle">Common Good Fits</div>
+                            <div class="rcd-readiness-list">
+                                <div class="rcd-pill is-muted">Large logs or transcripts</div>
+                                <div class="rcd-pill is-muted">Many notes or markdown attachments</div>
+                                <div class="rcd-pill is-muted">Oversized tool output that needs synthesis</div>
+                                <div class="rcd-pill is-muted">Cross-document questions with scattered evidence</div>
+                            </div>
+                        </div>
+                    </details>
+                </section>
+
+                <div class="rcd-grid">
+                    <section class="rcd-card">
+                        <div class="rcd-card-title">Environment Status</div>
+                        <template x-if="$store.rlmContextDashboard.status">
+                            <div class="rcd-status-grid">
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Dependency</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.dependencyStateLabel()"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Module</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.status.dependency_module)"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Package</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.status.dependency_package)"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Version</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.status.dependency_version, 'Unknown')"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Revision</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.status.dependency_revision, 'Unknown')"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Docker</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.status.docker_available ? 'Available' : 'Unavailable'"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Runtime</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.status.containerized_runtime ? 'Containerized' : 'Host'"></span>
+                                </div>
+                            </div>
+                        </template>
+                        <div class="rcd-inline-actions">
+                            <button class="btn btn-field"
+                                    @click="$store.rlmContextDashboard.openDependencyInstaller()"
+                                    x-text="$store.rlmContextDashboard.getDependencyActionLabel()">
+                                Install Dependencies
+                            </button>
+                        </div>
+                        <div class="rcd-section" x-show="$store.rlmContextDashboard.status?.readiness">
+                            <div class="rcd-subtitle">Practical Readiness</div>
+                            <div class="rcd-status-grid">
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Active Context</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.status?.active_context?.name || $store.rlmContextDashboard.status?.active_context?.id, 'No active agent')"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Auto Routing</span>
+                                    <span class="rcd-stat-value">
+                                        <span class="rcd-pill"
+                                              :class="$store.rlmContextDashboard.readinessToneClass($store.rlmContextDashboard.readiness().auto_ready, $store.rlmContextDashboard.readiness().auto_enabled)"
+                                              x-text="$store.rlmContextDashboard.readinessLabel($store.rlmContextDashboard.readiness().auto_ready, $store.rlmContextDashboard.readiness().auto_enabled)"></span>
+                                    </span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Manual Tool</span>
+                                    <span class="rcd-stat-value">
+                                        <span class="rcd-pill"
+                                              :class="$store.rlmContextDashboard.readinessToneClass($store.rlmContextDashboard.readiness().manual_ready, $store.rlmContextDashboard.readiness().manual_tool_enabled)"
+                                              x-text="$store.rlmContextDashboard.readinessLabel($store.rlmContextDashboard.readiness().manual_ready, $store.rlmContextDashboard.readiness().manual_tool_enabled)"></span>
+                                    </span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Resolved Environment</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.readiness().environment?.resolved, 'Unknown')"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Root Backend</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.readiness().root_model?.backend, 'Unavailable')"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Subcall Backend</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.readiness().subcall_model?.backend, 'Root model fallback')"></span>
+                                </div>
+                            </div>
+                            <div class="rcd-readiness-shell">
+                                <div class="rcd-mini-label">Environment Reason</div>
+                                <div class="rcd-readiness-copy"
+                                     x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.readiness().environment?.reason, 'No environment summary available.')"></div>
+                            </div>
+                            <div class="rcd-detail-panels">
+                                <div class="rcd-readiness-shell">
+                                    <div class="rcd-mini-label">Root Model</div>
+                                    <div class="rcd-readiness-copy"
+                                         x-text="`${$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.readiness().root_model?.provider, 'unknown')} / ${$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.readiness().root_model?.model_name, 'unknown')}`"></div>
+                                    <div class="rcd-readiness-copy"
+                                         x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.readiness().root_model?.reason, 'Mapped successfully.')"></div>
+                                </div>
+                                <div class="rcd-readiness-shell">
+                                    <div class="rcd-mini-label">Subcall Model</div>
+                                    <div class="rcd-readiness-copy"
+                                         x-text="`${$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.readiness().subcall_model?.source, 'utility')} / ${$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.readiness().subcall_model?.model_name, 'root model')}`"></div>
+                                    <div class="rcd-readiness-copy"
+                                         x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.readiness().subcall_model?.reason, 'Subcalls will reuse the root model when needed.')"></div>
+                                </div>
+                            </div>
+                            <template x-if="($store.rlmContextDashboard.readiness().blockers || []).length > 0">
+                                <div class="rcd-readiness-list">
+                                    <div class="rcd-mini-label">Blockers</div>
+                                    <template x-for="item in $store.rlmContextDashboard.readiness().blockers" :key="item">
+                                        <div class="rcd-pill is-warning" x-text="item"></div>
+                                    </template>
+                                </div>
+                            </template>
+                            <template x-if="($store.rlmContextDashboard.readiness().advisories || []).length > 0">
+                                <div class="rcd-readiness-list">
+                                    <div class="rcd-mini-label">Advisories</div>
+                                    <template x-for="item in $store.rlmContextDashboard.readiness().advisories" :key="item">
+                                        <div class="rcd-pill is-muted" x-text="item"></div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                        <pre class="rcd-json"
+                             x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.status?.framework_python, 'Unknown runtime')"></pre>
+                        <pre class="rcd-json"
+                             x-text="$store.rlmContextDashboard.formatJson($store.rlmContextDashboard.status?.config || {})"></pre>
+                    </section>
+
+                    <section class="rcd-card">
+                        <div class="rcd-card-title">Recent Runs</div>
+                        <div class="rcd-runs">
+                            <template x-if="$store.rlmContextDashboard.runs.length === 0">
+                                <div class="rcd-empty">No persisted RLM runs yet.</div>
+                            </template>
+                            <template x-for="run in $store.rlmContextDashboard.runs" :key="run.run_id">
+                                <button class="rcd-run-item"
+                                        :class="{ 'is-active': $store.rlmContextDashboard.selectedRunId === run.run_id }"
+                                        @click="$store.rlmContextDashboard.loadRun(run.run_id)">
+                                    <div class="rcd-run-row">
+                                        <span class="rcd-run-id" x-text="run.run_id"></span>
+                                        <span class="rcd-pill"
+                                              :class="$store.rlmContextDashboard.statusToneClass(run.status)"
+                                              x-text="$store.rlmContextDashboard.shortValue(run.status, 'completed')"></span>
+                                    </div>
+                                    <span class="rcd-run-meta" x-text="$store.rlmContextDashboard.shortValue(run.trigger_reason || run.root_backend || run.response_preview, 'Stored run')"></span>
+                                    <span class="rcd-run-time" x-text="$store.rlmContextDashboard.shortValue(run.started_at)"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </section>
+                </div>
+
+                <section class="rcd-card rcd-detail-card">
+                    <div class="rcd-card-title">Run Detail</div>
+                    <template x-if="$store.rlmContextDashboard.selectedRun">
+                        <div class="rcd-detail">
+                            <div class="rcd-detail-meta">
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Run ID</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.selectedRun.run_id"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Started</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.selectedRun.started_at)"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Preview</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.previewText($store.rlmContextDashboard.selectedRun.summary?.response_preview, 140)"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Status</span>
+                                    <span class="rcd-stat-value">
+                                        <span class="rcd-pill"
+                                              :class="$store.rlmContextDashboard.statusToneClass($store.rlmContextDashboard.selectedRunView().metrics.status)"
+                                              x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.selectedRunView().metrics.status, 'completed')"></span>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="rcd-section">
+                                <div class="rcd-subtitle">Trajectory Overview</div>
+                                <div class="rcd-overview-grid">
+                                    <div class="rcd-stat">
+                                        <span class="rcd-stat-label">Iterations</span>
+                                        <span class="rcd-stat-value"
+                                              x-text="$store.rlmContextDashboard.formatCount($store.rlmContextDashboard.selectedRunView().metrics.iteration_count)"></span>
+                                    </div>
+                                    <div class="rcd-stat">
+                                        <span class="rcd-stat-label">Code Blocks</span>
+                                        <span class="rcd-stat-value"
+                                              x-text="$store.rlmContextDashboard.formatCount($store.rlmContextDashboard.selectedRunView().metrics.code_block_count)"></span>
+                                    </div>
+                                    <div class="rcd-stat">
+                                        <span class="rcd-stat-label">Subcalls</span>
+                                        <span class="rcd-stat-value"
+                                              x-text="$store.rlmContextDashboard.formatCount($store.rlmContextDashboard.selectedRunView().metrics.subcall_count)"></span>
+                                    </div>
+                                    <div class="rcd-stat">
+                                        <span class="rcd-stat-label">Error Iterations</span>
+                                        <span class="rcd-stat-value"
+                                              x-text="$store.rlmContextDashboard.formatCount($store.rlmContextDashboard.selectedRunView().metrics.error_iteration_count)"></span>
+                                    </div>
+                                    <div class="rcd-stat">
+                                        <span class="rcd-stat-label">Total Time</span>
+                                        <span class="rcd-stat-value"
+                                              x-text="$store.rlmContextDashboard.formatSeconds($store.rlmContextDashboard.selectedRunView().metrics.total_iteration_time)"></span>
+                                    </div>
+                                    <div class="rcd-stat">
+                                        <span class="rcd-stat-label">Prompt Reduction</span>
+                                        <span class="rcd-stat-value"
+                                              x-text="`${$store.rlmContextDashboard.formatCount($store.rlmContextDashboard.selectedRunView().metrics.approx_tokens_before)} -> ${$store.rlmContextDashboard.formatCount($store.rlmContextDashboard.selectedRunView().metrics.approx_tokens_after)}`"></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="rcd-section">
+                                <div class="rcd-subtitle">Iteration Map</div>
+                                <template x-if="$store.rlmContextDashboard.selectedRunView().iterations.length === 0">
+                                    <div class="rcd-empty">No iterations were captured for this run.</div>
+                                </template>
+                                <div class="rcd-iteration-map">
+                                    <template x-for="iteration in $store.rlmContextDashboard.selectedRunView().iterations" :key="iteration.iteration">
+                                        <button class="rcd-iteration-card"
+                                                :class="[
+                                                    $store.rlmContextDashboard.iterationToneClass(iteration),
+                                                    $store.rlmContextDashboard.selectedIterationId === iteration.iteration ? 'is-selected' : ''
+                                                ]"
+                                                @click="$store.rlmContextDashboard.selectIteration(iteration.iteration)">
+                                            <div class="rcd-iteration-card-head">
+                                                <span class="rcd-iteration-label" x-text="`Iteration ${iteration.iteration}`"></span>
+                                                <span class="rcd-pill"
+                                                      :class="$store.rlmContextDashboard.iterationToneClass(iteration)"
+                                                      x-text="iteration.final_answer ? 'final' : (iteration.had_error ? 'error' : 'active')"></span>
+                                            </div>
+                                            <div class="rcd-meter-row">
+                                                <span>Time</span>
+                                                <div class="rcd-meter"><span :style="$store.rlmContextDashboard.barStyle(iteration.time_pct)"></span></div>
+                                            </div>
+                                            <div class="rcd-meter-row">
+                                                <span>Activity</span>
+                                                <div class="rcd-meter"><span :style="$store.rlmContextDashboard.barStyle(iteration.activity_pct)"></span></div>
+                                            </div>
+                                            <div class="rcd-meter-row">
+                                                <span>Subcalls</span>
+                                                <div class="rcd-meter"><span :style="$store.rlmContextDashboard.barStyle(iteration.subcall_pct, 10)"></span></div>
+                                            </div>
+                                            <div class="rcd-iteration-meta">
+                                                <span x-text="$store.rlmContextDashboard.formatSeconds(iteration.iteration_time)"></span>
+                                                <span x-text="`${iteration.code_block_count} code`"></span>
+                                                <span x-text="`${iteration.subcall_count} subcalls`"></span>
+                                            </div>
+                                        </button>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <div class="rcd-detail-panels">
+                                <div class="rcd-section">
+                                    <div class="rcd-subtitle">Iteration Detail</div>
+                                    <template x-if="$store.rlmContextDashboard.selectedIterationView()">
+                                        <div class="rcd-iteration-detail">
+                                            <div class="rcd-status-grid">
+                                                <div class="rcd-stat">
+                                                    <span class="rcd-stat-label">Prompt Messages</span>
+                                                    <span class="rcd-stat-value"
+                                                          x-text="$store.rlmContextDashboard.formatCount($store.rlmContextDashboard.selectedIterationView().prompt_message_count)"></span>
+                                                </div>
+                                                <div class="rcd-stat">
+                                                    <span class="rcd-stat-label">Iteration Time</span>
+                                                    <span class="rcd-stat-value"
+                                                          x-text="$store.rlmContextDashboard.formatSeconds($store.rlmContextDashboard.selectedIterationView().iteration_time)"></span>
+                                                </div>
+                                                <div class="rcd-stat">
+                                                    <span class="rcd-stat-label">Response Length</span>
+                                                    <span class="rcd-stat-value"
+                                                          x-text="$store.rlmContextDashboard.formatCount($store.rlmContextDashboard.selectedIterationView().response_length)"></span>
+                                                </div>
+                                                <div class="rcd-stat">
+                                                    <span class="rcd-stat-label">Final Answer</span>
+                                                    <span class="rcd-stat-value"
+                                                          x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.selectedIterationView().final_answer, 'Not yet')"></span>
+                                                </div>
+                                            </div>
+                                            <div class="rcd-block-shell">
+                                                <div class="rcd-mini-label">Model Response</div>
+                                                <pre class="rcd-json"
+                                                     x-text="$store.rlmContextDashboard.selectedIterationView().response"></pre>
+                                            </div>
+                                            <div class="rcd-block-list">
+                                                <template x-for="block in $store.rlmContextDashboard.selectedIterationView().code_blocks" :key="block.index">
+                                                    <div class="rcd-block-card" :class="block.had_error ? 'is-error' : ''">
+                                                        <div class="rcd-block-head">
+                                                            <span class="rcd-mini-label" x-text="`Code Block ${block.index}`"></span>
+                                                            <span class="rcd-pill"
+                                                                  :class="block.had_error ? 'is-warning' : 'is-success'"
+                                                                  x-text="block.had_error ? 'stderr' : 'ok'"></span>
+                                                        </div>
+                                                        <pre class="rcd-code" x-text="block.code"></pre>
+                                                        <template x-if="block.stdout">
+                                                            <div class="rcd-io-grid">
+                                                                <div>
+                                                                    <div class="rcd-mini-label">stdout</div>
+                                                                    <pre class="rcd-json" x-text="block.stdout"></pre>
+                                                                </div>
+                                                            </div>
+                                                        </template>
+                                                        <template x-if="block.stderr">
+                                                            <div class="rcd-io-grid">
+                                                                <div>
+                                                                    <div class="rcd-mini-label">stderr</div>
+                                                                    <pre class="rcd-json is-error" x-text="block.stderr"></pre>
+                                                                </div>
+                                                            </div>
+                                                        </template>
+                                                        <template x-if="block.subcalls.length > 0">
+                                                            <div class="rcd-inline-stack">
+                                                                <div class="rcd-mini-label">Nested Subcalls</div>
+                                                                <template x-for="subcall in block.subcalls" :key="`${block.index}-${subcall.subcall_index}`">
+                                                                    <div class="rcd-subcall-inline">
+                                                                        <div class="rcd-subcall-head">
+                                                                            <span x-text="subcall.model || 'subcall model'"></span>
+                                                                            <span x-text="$store.rlmContextDashboard.formatSeconds(subcall.execution_time)"></span>
+                                                                        </div>
+                                                                        <div class="rcd-subcall-meta"
+                                                                             x-text="`${$store.rlmContextDashboard.formatCount(subcall.total_input_tokens)} in / ${$store.rlmContextDashboard.formatCount(subcall.total_output_tokens)} out`"></div>
+                                                                        <div class="rcd-subcall-preview"
+                                                                             x-text="$store.rlmContextDashboard.previewText(subcall.response_preview, 180)"></div>
+                                                                    </div>
+                                                                </template>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <template x-if="!$store.rlmContextDashboard.selectedIterationView()">
+                                        <div class="rcd-empty">Select an iteration to inspect its response, code blocks, and nested calls.</div>
+                                    </template>
+                                </div>
+
+                                <div class="rcd-section">
+                                    <div class="rcd-subtitle">Subcall Feed</div>
+                                    <template x-if="$store.rlmContextDashboard.selectedRunView().subcalls.length === 0">
+                                        <div class="rcd-empty">No nested subcalls were captured for this run.</div>
+                                    </template>
+                                    <div class="rcd-subcall-feed">
+                                        <template x-for="subcall in $store.rlmContextDashboard.selectedRunView().subcalls" :key="`${subcall.iteration}-${subcall.code_block_index}-${subcall.subcall_index}`">
+                                            <div class="rcd-subcall-card">
+                                                <div class="rcd-subcall-head">
+                                                    <span x-text="subcall.model || 'subcall model'"></span>
+                                                    <span x-text="`Iteration ${subcall.iteration}`"></span>
+                                                </div>
+                                                <div class="rcd-subcall-meta"
+                                                     x-text="`${$store.rlmContextDashboard.formatSeconds(subcall.execution_time)} · ${$store.rlmContextDashboard.formatCount(subcall.total_input_tokens)} in / ${$store.rlmContextDashboard.formatCount(subcall.total_output_tokens)} out`"></div>
+                                                <div class="rcd-subcall-preview"
+                                                     x-text="$store.rlmContextDashboard.previewText(subcall.response_preview, 220)"></div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <details class="rcd-raw-details">
+                                <summary>Raw Payload</summary>
+                                <div class="rcd-detail-panels">
+                                    <div>
+                                        <div class="rcd-subtitle">Summary</div>
+                                        <pre class="rcd-json"
+                                             x-text="$store.rlmContextDashboard.formatJson($store.rlmContextDashboard.selectedRun.summary || {})"></pre>
+                                    </div>
+                                    <div>
+                                        <div class="rcd-subtitle">Trajectory</div>
+                                        <pre class="rcd-json"
+                                             x-text="$store.rlmContextDashboard.formatJson($store.rlmContextDashboard.selectedRun.trajectory || {})"></pre>
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
+                    </template>
+                    <template x-if="!$store.rlmContextDashboard.selectedRun">
+                        <div class="rcd-empty">Select a stored run to inspect its summary and trajectory.</div>
+                    </template>
+                </section>
+            </div>
+        </template>
+    </div>
+
+    <style>
+        .rlm-context-dashboard {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1rem;
+        }
+
+        .rcd-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .rcd-header-actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .rcd-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .rcd-card {
+            border: 1px solid var(--color-border);
+            border-radius: 10px;
+            background: var(--color-panel);
+            padding: 1rem;
+        }
+
+        .rcd-detail-card {
+            min-height: 18rem;
+        }
+
+        .rcd-card-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+        }
+
+        .rcd-status-grid,
+        .rcd-detail-meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .rcd-inline-actions {
+            margin-bottom: 0.75rem;
+        }
+
+        .rcd-stat {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            padding: 0.65rem 0.75rem;
+            background: var(--color-background);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+        }
+
+        .rcd-stat-label {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            opacity: 0.65;
+        }
+
+        .rcd-stat-value {
+            font-size: 0.9rem;
+            word-break: break-word;
+        }
+
+        .rcd-runs {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-height: 20rem;
+            overflow: auto;
+        }
+
+        .rcd-run-item {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.2rem;
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            background: var(--color-background);
+            color: inherit;
+            cursor: pointer;
+            text-align: left;
+        }
+
+        .rcd-run-item.is-active {
+            border-color: color-mix(in srgb, var(--color-highlight) 55%, var(--color-border));
+            background: color-mix(in srgb, var(--color-highlight) 8%, var(--color-background));
+        }
+
+        .rcd-run-id {
+            font-weight: 600;
+            font-size: 0.82rem;
+        }
+
+        .rcd-run-row,
+        .rcd-block-head,
+        .rcd-subcall-head,
+        .rcd-iteration-card-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+
+        .rcd-run-meta,
+        .rcd-run-time {
+            font-size: 0.78rem;
+            opacity: 0.78;
+        }
+
+        .rcd-detail-panels {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .rcd-section {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .rcd-subtitle {
+            font-size: 0.82rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .rcd-overview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .rcd-iteration-map {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .rcd-iteration-card {
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+            padding: 0.85rem;
+            border-radius: 10px;
+            border: 1px solid var(--color-border);
+            background: var(--color-background);
+            text-align: left;
+            color: inherit;
+            cursor: pointer;
+        }
+
+        .rcd-iteration-card.is-selected {
+            border-color: color-mix(in srgb, var(--color-highlight) 55%, var(--color-border));
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-highlight) 25%, transparent);
+        }
+
+        .rcd-iteration-card.is-error,
+        .rcd-block-card.is-error {
+            border-color: color-mix(in srgb, #d35f5f 50%, var(--color-border));
+        }
+
+        .rcd-iteration-card.is-final {
+            border-color: color-mix(in srgb, #40a36f 55%, var(--color-border));
+        }
+
+        .rcd-iteration-label {
+            font-size: 0.82rem;
+            font-weight: 600;
+        }
+
+        .rcd-iteration-meta,
+        .rcd-subcall-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            font-size: 0.74rem;
+            opacity: 0.8;
+        }
+
+        .rcd-meter-row {
+            display: grid;
+            grid-template-columns: 58px 1fr;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+        }
+
+        .rcd-meter {
+            width: 100%;
+            height: 0.45rem;
+            border-radius: 999px;
+            overflow: hidden;
+            background: color-mix(in srgb, var(--color-border) 60%, transparent);
+        }
+
+        .rcd-meter > span {
+            display: block;
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, color-mix(in srgb, var(--color-highlight) 45%, #58c1ff), var(--color-highlight));
+        }
+
+        .rcd-iteration-detail,
+        .rcd-block-list,
+        .rcd-inline-stack,
+        .rcd-subcall-feed {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .rcd-block-card,
+        .rcd-subcall-card,
+        .rcd-subcall-inline,
+        .rcd-block-shell {
+            border: 1px solid var(--color-border);
+            border-radius: 10px;
+            background: var(--color-background);
+            padding: 0.8rem;
+        }
+
+        .rcd-mini-label {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            opacity: 0.65;
+            margin-bottom: 0.4rem;
+        }
+
+        .rcd-code {
+            margin: 0;
+            padding: 0.9rem;
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--color-panel) 55%, var(--color-background));
+            border: 1px solid var(--color-border);
+            font-size: 0.74rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow: auto;
+        }
+
+        .rcd-io-grid {
+            margin-top: 0.75rem;
+        }
+
+        .rcd-subcall-preview {
+            font-size: 0.78rem;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .rcd-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.18rem 0.5rem;
+            border-radius: 999px;
+            border: 1px solid var(--color-border);
+            background: color-mix(in srgb, var(--color-panel) 55%, var(--color-background));
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            white-space: nowrap;
+        }
+
+        .rcd-pill.is-success,
+        .rcd-iteration-card.is-final .rcd-pill {
+            border-color: color-mix(in srgb, #40a36f 50%, var(--color-border));
+            background: color-mix(in srgb, #40a36f 12%, var(--color-background));
+        }
+
+        .rcd-pill.is-warning,
+        .rcd-iteration-card.is-error .rcd-pill {
+            border-color: color-mix(in srgb, #d58a2f 50%, var(--color-border));
+            background: color-mix(in srgb, #d58a2f 14%, var(--color-background));
+        }
+
+        .rcd-pill.is-muted {
+            opacity: 0.75;
+        }
+
+        .rcd-pill.is-normal {
+            border-color: color-mix(in srgb, var(--color-highlight) 50%, var(--color-border));
+            background: color-mix(in srgb, var(--color-highlight) 10%, var(--color-background));
+        }
+
+        .rcd-raw-details {
+            border-top: 1px solid var(--color-border);
+            padding-top: 1rem;
+        }
+
+        .rcd-raw-details > summary {
+            cursor: pointer;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+        }
+
+        .rcd-json {
+            margin: 0;
+            padding: 0.9rem;
+            max-height: 24rem;
+            overflow: auto;
+            border-radius: 8px;
+            background: var(--color-background);
+            border: 1px solid var(--color-border);
+            font-size: 0.75rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .rcd-json.is-error {
+            border-color: color-mix(in srgb, #d35f5f 45%, var(--color-border));
+        }
+
+        .rcd-empty {
+            padding: 1rem;
+            border: 1px dashed var(--color-border);
+            border-radius: 8px;
+            color: var(--color-secondary);
+            background: var(--color-background);
+        }
+
+        .rcd-readiness-shell {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            padding: 0.75rem;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            background: var(--color-background);
+        }
+
+        .rcd-readiness-copy {
+            font-size: 0.82rem;
+            line-height: 1.45;
+            word-break: break-word;
+        }
+
+        .rcd-readiness-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+        }
+    </style>
+</body>
+
+</html>
