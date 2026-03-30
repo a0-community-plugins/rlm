@@ -1,4 +1,4 @@
-# RLM Context
+# RLM
 
 Hybrid Recursive Language Model routing for oversized external context in Agent Zero.
 
