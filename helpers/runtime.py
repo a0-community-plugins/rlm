@@ -13,9 +13,9 @@ from typing import Any
 from uuid import uuid4
 
 from usr.plugins.rlm_context.helpers.config import get_run_store
-from usr.plugins.rlm_context.helpers.context_packer import PackedContext, pack_messages_for_rlm
-from usr.plugins.rlm_context.helpers.environment import EnvironmentResolution, resolve_environment
-from usr.plugins.rlm_context.helpers.provider_mapping import ProviderMapping, map_agent_zero_config_to_rlm
+from usr.plugins.rlm.helpers.context_packer import PackedContext, pack_messages_for_rlm
+from usr.plugins.rlm.helpers.environment import EnvironmentResolution, resolve_environment
+from usr.plugins.rlm.helpers.provider_mapping import ProviderMapping, map_agent_zero_config_to_rlm
 
 
 AGENT_ZERO_RLM_PROMPT_OVERLAY = """

@@ -1,10 +1,10 @@
 from helpers.extension import Extension
 
-from usr.plugins.rlm_context.helpers.config import (
+from usr.plugins.rlm.helpers.config import (
     get_chat_and_utility_configs,
     get_plugin_config,
 )
-from usr.plugins.rlm_context.helpers.runtime import RLMChatWrapper
+from usr.plugins.rlm.helpers.runtime import RLMChatWrapper
 
 
 class RLMContextChatModel(Extension):

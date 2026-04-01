@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from usr.plugins.rlm_context.helpers.bootstrap import ensure_rlm_dependency, get_dependency_status
+from usr.plugins.rlm.helpers.bootstrap import ensure_rlm_dependency, get_dependency_status
 
 
 def main() -> int:

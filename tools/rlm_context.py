@@ -6,16 +6,16 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from helpers.tool import Response, Tool
 from helpers.history import output_text
-from usr.plugins.rlm_context.helpers.config import (
+from usr.plugins.rlm.helpers.config import (
     get_chat_and_utility_configs,
     get_plugin_config,
     get_run_store,
 )
-from usr.plugins.rlm_context.helpers.context_packer import pack_messages_for_rlm
-from usr.plugins.rlm_context.helpers.environment import resolve_environment
-from usr.plugins.rlm_context.helpers.provider_mapping import map_agent_zero_config_to_rlm
-from usr.plugins.rlm_context.helpers.readiness import build_runtime_readiness
-from usr.plugins.rlm_context.helpers.runtime import RoutePayload, run_manual_tool
+from usr.plugins.rlm.helpers.context_packer import pack_messages_for_rlm
+from usr.plugins.rlm.helpers.environment import resolve_environment
+from usr.plugins.rlm.helpers.provider_mapping import map_agent_zero_config_to_rlm
+from usr.plugins.rlm.helpers.readiness import build_runtime_readiness
+from usr.plugins.rlm.helpers.runtime import RoutePayload, run_manual_tool
 
 
 class RLMContextTool(Tool):

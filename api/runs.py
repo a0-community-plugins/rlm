@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from helpers.api import ApiHandler, Request, Response
 
-from usr.plugins.rlm_context.helpers.config import get_run_store
-from usr.plugins.rlm_context.helpers.trajectory_view import build_run_view
+from usr.plugins.rlm.helpers.config import get_run_store
+from usr.plugins.rlm.helpers.trajectory_view import build_run_view
 
 
 class RunsApi(ApiHandler):

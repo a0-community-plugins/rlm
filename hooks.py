@@ -5,9 +5,9 @@ import shutil
 from pathlib import Path
 import sys
 
-from usr.plugins.rlm_context.helpers.bootstrap import ensure_rlm_dependency
+from usr.plugins.rlm.helpers.bootstrap import ensure_rlm_dependency
 
-PLUGIN_PACKAGE_PREFIX = "usr.plugins.rlm_context"
+PLUGIN_PACKAGE_PREFIX = "usr.plugins.rlm"
 PLUGIN_ROOT = Path(__file__).resolve().parent
 
 

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from usr.plugins.rlm_context.helpers.bootstrap import get_dependency_status
-from usr.plugins.rlm_context.helpers.config import (
+from usr.plugins.rlm.helpers.bootstrap import get_dependency_status
+from usr.plugins.rlm.helpers.config import (
     get_chat_and_utility_configs,
     get_plugin_config,
 )
-from usr.plugins.rlm_context.helpers.environment import resolve_environment
-from usr.plugins.rlm_context.helpers.provider_mapping import (
+from usr.plugins.rlm.helpers.environment import resolve_environment
+from usr.plugins.rlm.helpers.provider_mapping import (
     ProviderMapping,
     map_agent_zero_config_to_rlm,
 )
