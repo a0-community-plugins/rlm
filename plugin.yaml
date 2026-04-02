@@ -1,7 +1,7 @@
 name: rlm
 title: RLM
 description: Hybrid recursive language model routing for oversized external context in Agent Zero.
-version: 1.1
+version: "1.1"
 settings_sections:
   - agent
 per_project_config: true
