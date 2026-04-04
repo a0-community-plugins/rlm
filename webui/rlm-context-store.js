@@ -2,10 +2,10 @@ import { createStore } from "/js/AlpineStore.js";
 import { callJsonApi } from "/js/api.js";
 import { toastFrontendError, toastFrontendSuccess } from "/components/notifications/notification-store.js";
 
-const PLUGIN_NAME = "rlm_context";
-const STATUS_API = "/plugins/rlm_context/status";
-const RUNS_API = "/plugins/rlm_context/runs";
-const TITLE = "RLM Context";
+const PLUGIN_NAME = "rlm";
+const STATUS_API = "/plugins/rlm/status";
+const RUNS_API = "/plugins/rlm/runs";
+const TITLE = "RLM";
 
 function formatError(error, fallback) {
   return error instanceof Error && error.message ? error.message : fallback;

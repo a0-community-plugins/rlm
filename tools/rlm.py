@@ -29,7 +29,7 @@ class RLMContextTool(Tool):
         plugin_config = get_plugin_config(self.agent)
         if not plugin_config.get("manual_tool_enabled", True):
             return Response(
-                message="RLM Context manual analysis is disabled in the plugin settings.",
+                message="RLM manual analysis is disabled in the plugin settings.",
                 break_loop=False,
             )
 
@@ -37,7 +37,7 @@ class RLMContextTool(Tool):
         if not readiness.get("manual_ready", False):
             blocker = (readiness.get("blockers") or ["RLM is not ready for this agent."])[0]
             return Response(
-                message=f"RLM Context is not ready for manual analysis: {blocker}",
+                message=f"RLM is not ready for manual analysis: {blocker}",
                 break_loop=False,
                 additional={"rlm_readiness": readiness},
             )

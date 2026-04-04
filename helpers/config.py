@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from usr.plugins.rlm_context.helpers.persistence import RunStore
+from usr.plugins.rlm.helpers.persistence import RunStore
 
 
 DEFAULTS = {
@@ -34,7 +34,7 @@ def get_plugin_config(agent=None) -> dict:
     try:
         from helpers import plugins
 
-        configured = plugins.get_plugin_config("rlm_context", agent=agent) or {}
+        configured = plugins.get_plugin_config("rlm", agent=agent) or {}
     except Exception:
         configured = {}
     return {**DEFAULTS, **configured}

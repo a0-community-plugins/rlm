@@ -1,13 +1,13 @@
 <html>
 <head>
-    <title>RLM Context</title>
+    <title>RLM</title>
 </head>
 
 <body>
     <div x-data>
         <template x-if="config">
             <div>
-                <div class="section-title">RLM Context</div>
+                <div class="section-title">RLM</div>
                 <div class="section-description">
                     Route oversized external context through Recursive Language Models while keeping the normal Agent Zero loop in control.
                 </div>
@@ -63,7 +63,7 @@
                     </div>
                     <div class="field-control">
                         <button class="btn btn-field"
-                                @click="(async () => { const { store } = await import('/components/plugins/list/plugin-execute-store.js'); await store.open({ name: 'rlm_context', display_name: 'RLM Context' }); })()">
+                                @click="(async () => { const { store } = await import('/components/plugins/list/plugin-execute-store.js'); await store.open({ name: 'rlm', display_name: 'RLM' }); })()">
                             Install Dependencies
                         </button>
                     </div>
@@ -283,7 +283,7 @@
                         </div>
                     </div>
                     <div class="field-control">
-                        <button class="btn btn-field" @click="openModal('/plugins/rlm_context/webui/main.html')">
+                        <button class="btn btn-field" @click="openModal('/plugins/rlm/webui/main.html')">
                             Open Explorer
                         </button>
                     </div>
