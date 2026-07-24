@@ -21,7 +21,7 @@ DEFAULTS = {
     "max_errors": 3,
     "max_concurrent_subcalls": 4,
     "subcall_model_source": "utility",
-    "persistence_enabled": True,
+    "persistence_enabled": False,
     "retention_count": 25,
 }
 
@@ -59,4 +59,3 @@ def get_chat_and_utility_configs(agent) -> tuple[dict, dict]:
         return get_chat_model_config(agent) or {}, get_utility_model_config(agent) or {}
     except Exception:
         return {}, {}
-

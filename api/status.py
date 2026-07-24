@@ -5,6 +5,7 @@ from helpers.api import ApiHandler, Request
 
 from usr.plugins.rlm.helpers.bootstrap import get_dependency_status
 from usr.plugins.rlm.helpers.config import get_plugin_config
+from usr.plugins.rlm.helpers.docker_setup import get_docker_setup_status
 from usr.plugins.rlm.helpers.environment import (
     detect_containerized_runtime,
     is_docker_available,
@@ -26,6 +27,7 @@ class StatusApi(ApiHandler):
             **dependency_status,
             "docker_available": is_docker_available(),
             "containerized_runtime": detect_containerized_runtime(),
+            "docker_setup": get_docker_setup_status(),
             "config": config,
             "active_context": {
                 "id": getattr(active_context, "id", ""),

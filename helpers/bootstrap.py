@@ -1,37 +1,36 @@
 from __future__ import annotations
 
 from importlib import invalidate_caches
-from importlib.metadata import PackageNotFoundError, distribution, version
+from importlib.metadata import PackageNotFoundError, version
 from importlib.util import find_spec
-import json
+import os
+from pathlib import Path
 import subprocess
 import sys
 
 
 DEPENDENCY_MODULE = "rlm"
-DEPENDENCY_SOURCE_URL = "https://github.com/alexzhang13/rlm.git"
-DEPENDENCY_TARGET_REVISION = "95bff825c11909bde7fb9d1257606f44886df869"
-DEPENDENCY_PACKAGE = (
-    f"rlms @ git+{DEPENDENCY_SOURCE_URL}@{DEPENDENCY_TARGET_REVISION}"
-)
 DEPENDENCY_DISTRIBUTION = "rlms"
+DEPENDENCY_TARGET_VERSION = "0.1.3"
+DEPENDENCY_PACKAGE = f"{DEPENDENCY_DISTRIBUTION}=={DEPENDENCY_TARGET_VERSION}"
+DEPENDENCY_UPSTREAM_URL = "https://github.com/alexzhang13/rlm"
+FRAMEWORK_PYTHON_ENV = "A0_FRAMEWORK_PYTHON"
 
 
 def get_dependency_status() -> dict[str, object]:
-    spec = find_spec(DEPENDENCY_MODULE)
+    try:
+        spec = find_spec(DEPENDENCY_MODULE)
+    except (ImportError, ModuleNotFoundError, ValueError):
+        spec = None
     dependency_version = None
-    dependency_source = None
-    dependency_revision = None
     try:
         dependency_version = version(DEPENDENCY_DISTRIBUTION)
-        dependency_source, dependency_revision = _read_dependency_direct_url()
     except PackageNotFoundError:
         dependency_version = None
 
     dependency_installed = spec is not None
-    dependency_satisfied = dependency_installed and _matches_target_revision(
-        dependency_source,
-        dependency_revision,
+    dependency_satisfied = (
+        dependency_installed and dependency_version == DEPENDENCY_TARGET_VERSION
     )
 
     return {
@@ -40,11 +39,10 @@ def get_dependency_status() -> dict[str, object]:
         "dependency_module": DEPENDENCY_MODULE,
         "dependency_package": DEPENDENCY_PACKAGE,
         "dependency_version": dependency_version,
-        "dependency_source": dependency_source,
-        "dependency_revision": dependency_revision,
-        "dependency_target_source": DEPENDENCY_SOURCE_URL,
-        "dependency_target_revision": DEPENDENCY_TARGET_REVISION,
+        "dependency_target_version": DEPENDENCY_TARGET_VERSION,
+        "dependency_upstream_url": DEPENDENCY_UPSTREAM_URL,
         "framework_python": sys.executable,
+        "preferred_framework_python": find_framework_python(),
     }
 
 
@@ -75,34 +73,23 @@ def ensure_rlm_dependency() -> dict[str, object]:
     status = get_dependency_status()
     if not status["dependency_satisfied"]:
         raise RuntimeError(
-            f"{DEPENDENCY_PACKAGE} was installed, but the required revision is still unavailable."
+            f"{DEPENDENCY_PACKAGE} was installed, but the required version is still unavailable."
         )
     return status
 
 
-def _read_dependency_direct_url() -> tuple[str | None, str | None]:
-    try:
-        direct_url_text = distribution(DEPENDENCY_DISTRIBUTION).read_text("direct_url.json")
-    except Exception:
-        return None, None
-    if not direct_url_text:
-        return None, None
-    try:
-        payload = json.loads(direct_url_text)
-    except Exception:
-        return None, None
-    source = str(payload.get("url") or "").strip() or None
-    vcs_info = dict(payload.get("vcs_info") or {})
-    revision = str(vcs_info.get("commit_id") or "").strip() or None
-    return source, revision
-
-
-def _matches_target_revision(source: str | None, revision: str | None) -> bool:
-    if not source or not revision:
-        return False
-    normalized_source = source.removesuffix("/")
-    normalized_target = DEPENDENCY_SOURCE_URL.removesuffix("/")
-    return (
-        normalized_source == normalized_target
-        and revision == DEPENDENCY_TARGET_REVISION
-    )
+def find_framework_python() -> str:
+    configured = str(os.getenv(FRAMEWORK_PYTHON_ENV, "") or "").strip()
+    candidates = [
+        configured,
+        "/opt/venv-a0/bin/python3",
+        "/opt/venv-a0/bin/python",
+        sys.executable,
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate).expanduser()
+        if path.is_file() and os.access(path, os.X_OK):
+            return str(path)
+    return sys.executable

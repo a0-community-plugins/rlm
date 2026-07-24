@@ -1,0 +1,11 @@
+{
+  "name": "RLM",
+  "description": "Hybrid recursive language model routing for oversized external context in Agent Zero.",
+  "version": "2.0.0",
+  "settings_sections": [
+    "agent"
+  ],
+  "per_project_config": true,
+  "per_agent_config": true,
+  "always_enabled": false
+}

@@ -7,9 +7,10 @@
 </head>
 
 <body>
-    <div x-data x-init="await $store.rlmContextDashboard.onOpen()">
+    <div x-data>
         <template x-if="$store.rlmContextDashboard">
-            <div class="rlm-context-dashboard">
+            <div class="rlm-context-dashboard"
+                 x-init="await $store.rlmContextDashboard.onOpen()">
                 <div class="rcd-header">
                     <div>
                         <div class="field-title" style="font-size: 1rem;">RLM Context Explorer</div>
@@ -21,8 +22,12 @@
                         <button class="btn btn-field" @click="$store.rlmContextDashboard.loadStatus()">
                             Refresh Status
                         </button>
-                        <button class="btn btn-field" @click="$store.rlmContextDashboard.openDependencyInstaller()">
-                            Install Dependencies
+                        <button class="btn btn-field"
+                                x-show="!$store.rlmContextDashboard.status?.dependency_satisfied"
+                                :disabled="$store.rlmContextDashboard.settingUp"
+                                @click="$store.rlmContextDashboard.retrySetup()"
+                                x-text="$store.rlmContextDashboard.settingUp ? 'Setting Up…' : 'Retry Setup'">
+                            Retry Setup
                         </button>
                         <button class="btn btn-field" @click="$store.rlmContextDashboard.loadRuns()">
                             Refresh Runs
@@ -43,7 +48,7 @@
                     <details class="rcd-readiness-shell">
                         <summary class="rcd-mini-label">Expand for examples and behavior notes</summary>
                         <div class="rcd-readiness-copy" style="margin-top: 0.5rem;">
-                            Auto-routing is mostly invisible. The <code>rlm_context</code> tool is the explicit path. The explorer is where users can inspect iterations and subcalls when they want to verify what happened.
+                            Auto-routing is mostly invisible. The <code>rlm</code> tool is the explicit path. The explorer is where users can inspect iterations and subcalls when they want to verify what happened.
                         </div>
                         <div class="rcd-section">
                             <div class="rcd-subtitle">Common Good Fits</div>
@@ -83,9 +88,9 @@
                                           x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.status.dependency_version, 'Unknown')"></span>
                                 </div>
                                 <div class="rcd-stat">
-                                    <span class="rcd-stat-label">Revision</span>
+                                    <span class="rcd-stat-label">Target Version</span>
                                     <span class="rcd-stat-value"
-                                          x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.status.dependency_revision, 'Unknown')"></span>
+                                          x-text="$store.rlmContextDashboard.shortValue($store.rlmContextDashboard.status.dependency_target_version, 'Unknown')"></span>
                                 </div>
                                 <div class="rcd-stat">
                                     <span class="rcd-stat-label">Docker</span>
@@ -99,13 +104,6 @@
                                 </div>
                             </div>
                         </template>
-                        <div class="rcd-inline-actions">
-                            <button class="btn btn-field"
-                                    @click="$store.rlmContextDashboard.openDependencyInstaller()"
-                                    x-text="$store.rlmContextDashboard.getDependencyActionLabel()">
-                                Install Dependencies
-                            </button>
-                        </div>
                         <div class="rcd-section" x-show="$store.rlmContextDashboard.status?.readiness">
                             <div class="rcd-subtitle">Practical Readiness</div>
                             <div class="rcd-status-grid">
@@ -171,7 +169,7 @@
                                 <div class="rcd-readiness-list">
                                     <div class="rcd-mini-label">Blockers</div>
                                     <template x-for="item in $store.rlmContextDashboard.readiness().blockers" :key="item">
-                                        <div class="rcd-pill is-warning" x-text="item"></div>
+                                        <div class="rcd-notice is-warning" x-text="item"></div>
                                     </template>
                                 </div>
                             </template>
@@ -179,9 +177,68 @@
                                 <div class="rcd-readiness-list">
                                     <div class="rcd-mini-label">Advisories</div>
                                     <template x-for="item in $store.rlmContextDashboard.readiness().advisories" :key="item">
-                                        <div class="rcd-pill is-muted" x-text="item"></div>
+                                        <div class="rcd-notice is-muted" x-text="item"></div>
                                     </template>
                                 </div>
+                            </template>
+                        </div>
+                        <div class="rcd-section" x-show="$store.rlmContextDashboard.status?.docker_setup">
+                            <div class="rcd-subtitle">Docker Sandbox Setup</div>
+                            <div class="rcd-status-grid">
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Docker CLI</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.dockerSetup().cli_available ? $store.rlmContextDashboard.dockerSetup().cli_source : 'Missing'"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Endpoint</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.dockerSetup().endpoint_present ? $store.rlmContextDashboard.dockerSetup().endpoint_kind : 'Missing'"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Daemon</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.dockerSetup().daemon_reachable ? 'Reachable' : 'Unavailable'"></span>
+                                </div>
+                                <div class="rcd-stat">
+                                    <span class="rcd-stat-label">Sandbox Probe</span>
+                                    <span class="rcd-stat-value"
+                                          x-text="$store.rlmContextDashboard.dockerProbeStateLabel()"></span>
+                                </div>
+                            </div>
+                            <div class="rcd-notice is-warning"
+                                 x-text="$store.rlmContextDashboard.dockerSetup().risk"></div>
+                            <template x-if="$store.rlmContextDashboard.dockerSetup().setup_required">
+                                <details class="rcd-readiness-shell" open>
+                                    <summary class="rcd-mini-label">One-command Compose setup</summary>
+                                    <div class="rcd-readiness-copy">
+                                        Run this from the Agent Zero repository on the Docker host. It performs a read-only check first, asks for confirmation, builds a small derived image containing the Docker CLI, and recreates only the standard <code>agent-zero</code> service with the selected socket.
+                                    </div>
+                                    <pre class="rcd-command"
+                                         x-text="$store.rlmContextDashboard.dockerSetup().setup_command"></pre>
+                                    <div class="rcd-action-row">
+                                        <button class="btn btn-field"
+                                                @click="$store.rlmContextDashboard.copyDockerSetupCommand()">
+                                            Copy Host Command
+                                        </button>
+                                    </div>
+                                    <div class="rcd-readiness-copy">
+                                        If your deployment uses a different Compose file or service layout, run the script with <code>--help</code>. A running container cannot add a mount to itself, so recreation is the only non-manual step the UI cannot perform safely.
+                                    </div>
+                                </details>
+                            </template>
+                            <div class="rcd-action-row">
+                                <button class="btn btn-field"
+                                        :disabled="$store.rlmContextDashboard.probingDocker || !$store.rlmContextDashboard.dockerSetup().daemon_reachable"
+                                        @click="$store.rlmContextDashboard.runDockerProbe()"
+                                        x-text="$store.rlmContextDashboard.probingDocker ? 'Running Probe…' : 'Run Sandbox Probe'">
+                                    Run Sandbox Probe
+                                </button>
+                            </div>
+                            <template x-if="$store.rlmContextDashboard.dockerSetup().last_probe">
+                                <div class="rcd-notice"
+                                     :class="$store.rlmContextDashboard.dockerSetup().last_probe.success ? 'is-success' : 'is-warning'"
+                                     x-text="`${$store.rlmContextDashboard.dockerSetup().last_probe.message} Checked ${$store.rlmContextDashboard.dockerSetup().last_probe.checked_at}.`"></div>
                             </template>
                         </div>
                         <pre class="rcd-json"
@@ -459,6 +516,9 @@
             flex-direction: column;
             gap: 1rem;
             padding: 1rem;
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         .rcd-header {
@@ -479,6 +539,7 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 1rem;
+            min-width: 0;
         }
 
         .rcd-card {
@@ -486,6 +547,9 @@
             border-radius: 10px;
             background: var(--color-panel);
             padding: 1rem;
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         .rcd-detail-card {
@@ -585,6 +649,12 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 1rem;
+            min-width: 0;
+        }
+
+        .rcd-grid > *,
+        .rcd-detail-panels > * {
+            min-width: 0;
         }
 
         .rcd-section {
@@ -762,6 +832,36 @@
             background: color-mix(in srgb, var(--color-highlight) 10%, var(--color-background));
         }
 
+        .rcd-notice {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+            padding: 0.55rem 0.65rem;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--color-panel) 55%, var(--color-background));
+            box-sizing: border-box;
+            font-size: 0.78rem;
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            white-space: normal;
+        }
+
+        .rcd-notice.is-warning {
+            border-color: color-mix(in srgb, #d58a2f 50%, var(--color-border));
+            background: color-mix(in srgb, #d58a2f 14%, var(--color-background));
+        }
+
+        .rcd-notice.is-success {
+            border-color: color-mix(in srgb, #40a36f 50%, var(--color-border));
+            background: color-mix(in srgb, #40a36f 12%, var(--color-background));
+        }
+
+        .rcd-notice.is-muted {
+            opacity: 0.78;
+        }
+
         .rcd-raw-details {
             border-top: 1px solid var(--color-border);
             padding-top: 1rem;
@@ -776,11 +876,14 @@
         .rcd-json {
             margin: 0;
             padding: 0.9rem;
+            width: 100%;
+            max-width: 100%;
             max-height: 24rem;
             overflow: auto;
             border-radius: 8px;
             background: var(--color-background);
             border: 1px solid var(--color-border);
+            box-sizing: border-box;
             font-size: 0.75rem;
             line-height: 1.5;
             white-space: pre-wrap;
@@ -819,6 +922,49 @@
             display: flex;
             flex-direction: column;
             gap: 0.45rem;
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .rcd-action-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .rcd-command {
+            margin: 0.5rem 0;
+            padding: 0.75rem;
+            width: 100%;
+            max-width: 100%;
+            overflow-x: auto;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--color-panel) 55%, var(--color-background));
+            box-sizing: border-box;
+            font-size: 0.75rem;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        @media (max-width: 600px) {
+            .rlm-context-dashboard {
+                padding: 0.75rem;
+            }
+
+            .rcd-grid,
+            .rcd-detail-panels {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .rcd-header-actions {
+                width: 100%;
+            }
+
+            .rcd-header-actions > .btn {
+                flex: 1 1 10rem;
+            }
         }
     </style>
 </body>

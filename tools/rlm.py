@@ -9,7 +9,6 @@ from helpers.history import output_text
 from usr.plugins.rlm.helpers.config import (
     get_chat_and_utility_configs,
     get_plugin_config,
-    get_run_store,
 )
 from usr.plugins.rlm.helpers.context_packer import pack_messages_for_rlm
 from usr.plugins.rlm.helpers.environment import resolve_environment
@@ -91,12 +90,9 @@ class RLMContextTool(Tool):
         )
 
         result = await run_manual_tool(payload)
-        get_run_store(self.agent).save_run(result["run_record"])
-
-        message = (
-            f"RLM analysis result:\n{result['response']}\n\n"
-            f"Run ID: {result['run_record']['run_id']}"
-        )
+        message = f"RLM analysis result:\n{result['response']}"
+        if plugin_config.get("persistence_enabled", False):
+            message += f"\n\nStored run ID: {result['run_record']['run_id']}"
         return Response(message=message, break_loop=False)
 
 
