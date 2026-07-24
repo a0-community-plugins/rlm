@@ -1,0 +1,11 @@
+services:
+  agent-zero:
+    image: ${RLM_AGENT_ZERO_IMAGE:-agent-zero-rlm:local}
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      RLM_AGENT_ZERO_CONTAINER: ${RLM_AGENT_ZERO_CONTAINER:-}
+      RLM_DOCKER_NETWORK: ${RLM_DOCKER_NETWORK:-}
+    volumes:
+      - type: bind
+        source: ${RLM_DOCKER_SOCKET:-/var/run/docker.sock}
+        target: /var/run/docker.sock

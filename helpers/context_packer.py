@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Any
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+DEFAULT_UPLOAD_ROOT = PROJECT_ROOT / "usr" / "uploads"
+
+
 @dataclass
 class PackedContext:
     should_route: bool
@@ -17,13 +21,21 @@ class PackedContext:
     threshold_tokens: int
 
 
-def pack_messages_for_rlm(messages: list[Any], config: dict[str, Any] | None) -> PackedContext:
+def pack_messages_for_rlm(
+    messages: list[Any],
+    config: dict[str, Any] | None,
+    *,
+    attachment_roots: list[str | Path] | tuple[str | Path, ...] | None = None,
+) -> PackedContext:
     config = config or {}
     min_block_chars = int(config.get("min_block_chars", 4000) or 4000)
     trigger_threshold_pct = float(config.get("trigger_threshold_pct", 0.8) or 0.8)
     ctx_length = int(config.get("ctx_length", 128000) or 128000)
     attachment_max_chars = int(config.get("attachment_max_chars", 2_000_000) or 2_000_000)
     threshold_tokens = int(ctx_length * trigger_threshold_pct)
+    allowed_attachment_roots = _normalize_attachment_roots(
+        attachment_roots if attachment_roots is not None else [DEFAULT_UPLOAD_ROOT]
+    )
 
     serialized = [_serialize_message(message) for message in messages]
     approx_tokens_before = _estimate_tokens(serialized)
@@ -45,10 +57,17 @@ def pack_messages_for_rlm(messages: list[Any], config: dict[str, Any] | None) ->
             attachment_max_chars=attachment_max_chars,
             message_index=index,
             role=message.get("role", "user"),
+            attachment_roots=allowed_attachment_roots,
         )
         visible_messages.append({**message, "content": content})
         offloaded_blocks.extend(blocks)
 
+    attachment_tokens = sum(
+        _estimate_tokens(block.get("content", ""))
+        for block in offloaded_blocks
+        if block.get("source", {}).get("kind") == "attachment"
+    )
+    approx_tokens_before += attachment_tokens
     approx_tokens_after = _estimate_tokens(visible_messages)
     threshold_reached = approx_tokens_before >= threshold_tokens
     reduction_succeeded = approx_tokens_after < threshold_tokens
@@ -96,6 +115,7 @@ def _rewrite_content(
     attachment_max_chars: int,
     message_index: int,
     role: str,
+    attachment_roots: tuple[Path, ...],
     path: list[str] | None = None,
 ) -> tuple[Any, list[dict[str, Any]]]:
     path = path or []
@@ -113,6 +133,7 @@ def _rewrite_content(
                         min_block_chars=min_block_chars,
                         attachment_max_chars=attachment_max_chars,
                         message_index=message_index,
+                        attachment_roots=attachment_roots,
                     )
                     if block is not None:
                         blocks.append(block)
@@ -142,6 +163,7 @@ def _rewrite_content(
                 attachment_max_chars=attachment_max_chars,
                 message_index=message_index,
                 role=role,
+                attachment_roots=attachment_roots,
                 path=path + [key],
             )
             rewritten[key] = rewritten_value
@@ -158,6 +180,7 @@ def _rewrite_content(
                 attachment_max_chars=attachment_max_chars,
                 message_index=message_index,
                 role=role,
+                attachment_roots=attachment_roots,
                 path=path + [str(idx)],
             )
             rewritten_list.append(rewritten_item)
@@ -174,16 +197,13 @@ def _attachment_block(
     min_block_chars: int,
     attachment_max_chars: int,
     message_index: int,
+    attachment_roots: tuple[Path, ...],
 ) -> dict[str, Any] | None:
     if not isinstance(attachment, str) or not attachment:
         return None
 
-    candidate_path = attachment
-    if candidate_path.startswith("/a0/"):
-        candidate_path = candidate_path[3:]
-
-    path = Path(candidate_path)
-    if not path.exists() or not path.is_file():
+    path = _resolve_allowed_attachment(attachment, attachment_roots)
+    if path is None:
         return None
 
     try:
@@ -216,6 +236,41 @@ def _attachment_block(
         },
         "content": text,
     }
+
+
+def _normalize_attachment_roots(
+    roots: list[str | Path] | tuple[str | Path, ...],
+) -> tuple[Path, ...]:
+    normalized: list[Path] = []
+    for root in roots:
+        try:
+            normalized.append(Path(root).expanduser().resolve())
+        except (OSError, RuntimeError):
+            continue
+    return tuple(dict.fromkeys(normalized))
+
+
+def _resolve_allowed_attachment(
+    attachment: str,
+    roots: tuple[Path, ...],
+) -> Path | None:
+    raw_path = Path(attachment).expanduser()
+    candidates = [raw_path]
+    if attachment.startswith("/a0/"):
+        candidates.append(PROJECT_ROOT / attachment.removeprefix("/a0/"))
+    elif not raw_path.is_absolute():
+        candidates.append(PROJECT_ROOT / raw_path)
+
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve(strict=True)
+        except (FileNotFoundError, OSError, RuntimeError):
+            continue
+        if not resolved.is_file():
+            continue
+        if any(resolved.is_relative_to(root) for root in roots):
+            return resolved
+    return None
 
 
 def _is_large_candidate(value: Any, min_block_chars: int) -> bool:

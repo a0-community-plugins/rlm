@@ -1,0 +1,7 @@
+ARG DOCKER_CLI_IMAGE=docker:cli
+ARG A0_BASE_IMAGE=agent0ai/agent-zero:latest
+
+FROM ${DOCKER_CLI_IMAGE} AS docker_cli
+FROM ${A0_BASE_IMAGE}
+
+COPY --from=docker_cli /usr/local/bin/docker /usr/local/libexec/rlm-docker/docker

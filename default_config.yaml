@@ -13,6 +13,5 @@ max_tokens: 0
 max_errors: 3
 max_concurrent_subcalls: 4
 subcall_model_source: utility
-persistence_enabled: true
+persistence_enabled: false
 retention_count: 25
-

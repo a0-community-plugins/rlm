@@ -2,9 +2,10 @@ import { createStore } from "/js/AlpineStore.js";
 import { callJsonApi } from "/js/api.js";
 import { toastFrontendError, toastFrontendSuccess } from "/components/notifications/notification-store.js";
 
-const PLUGIN_NAME = "rlm";
 const STATUS_API = "/plugins/rlm/status";
 const RUNS_API = "/plugins/rlm/runs";
+const DOCKER_SETUP_API = "/plugins/rlm/docker_setup";
+const INSTALL_SETUP_API = "/plugins/rlm/install_setup";
 const TITLE = "RLM";
 
 function formatError(error, fallback) {
@@ -21,18 +22,23 @@ const model = {
   loadingRuns: false,
   loadingRun: false,
   pruning: false,
+  probingDocker: false,
+  settingUp: false,
   initialized: false,
-
-  async init() {
-    if (this.initialized) {
-      return;
-    }
-    this.initialized = true;
-    await Promise.all([this.loadStatus(), this.loadRuns()]);
-  },
+  openPromise: null,
 
   async onOpen() {
-    await this.init();
+    if (this.openPromise) {
+      return await this.openPromise;
+    }
+
+    this.openPromise = Promise.all([this.loadStatus(), this.loadRuns()]);
+    try {
+      await this.openPromise;
+      this.initialized = true;
+    } finally {
+      this.openPromise = null;
+    }
   },
 
   async loadStatus() {
@@ -129,26 +135,63 @@ const model = {
     }
   },
 
-  async openDependencyInstaller() {
+  async retrySetup() {
+    this.settingUp = true;
     try {
-      const { store } = await import("/components/plugins/list/plugin-execute-store.js");
-      await store.open({ name: PLUGIN_NAME, display_name: TITLE });
+      const response = await callJsonApi(INSTALL_SETUP_API, {});
+      this.status = { ...(this.status || {}), ...(response || {}) };
+      void toastFrontendSuccess("RLM setup completed through the install hook.", TITLE);
     } catch (error) {
       void toastFrontendError(
-        `Failed to open dependency installer: ${formatError(error, "Unknown error")}`,
+        `RLM setup failed: ${formatError(error, "Unknown error")}`,
         TITLE,
       );
+    } finally {
+      this.settingUp = false;
     }
   },
 
-  getDependencyActionLabel() {
-    if (!this.status?.dependency_installed) {
-      return "Install Dependencies";
+  async runDockerProbe() {
+    this.probingDocker = true;
+    try {
+      const response = await callJsonApi(DOCKER_SETUP_API, { action: "probe" });
+      if (response?.docker_setup && this.status) {
+        this.status = { ...this.status, docker_setup: response.docker_setup };
+      } else {
+        await this.loadStatus();
+      }
+      if (response?.success) {
+        void toastFrontendSuccess("Docker sandbox probe passed.", TITLE);
+      } else {
+        void toastFrontendError(
+          response?.probe?.message || "Docker sandbox probe failed.",
+          TITLE,
+        );
+      }
+    } catch (error) {
+      void toastFrontendError(
+        `Docker sandbox probe failed: ${formatError(error, "Unknown error")}`,
+        TITLE,
+      );
+    } finally {
+      this.probingDocker = false;
     }
-    if (!this.status?.dependency_satisfied) {
-      return "Upgrade Dependencies";
+  },
+
+  async copyDockerSetupCommand() {
+    const command = this.dockerSetup().setup_command;
+    if (!command) {
+      return;
     }
-    return "Repair Dependencies";
+    try {
+      await navigator.clipboard.writeText(command);
+      void toastFrontendSuccess("Host setup command copied.", TITLE);
+    } catch (error) {
+      void toastFrontendError(
+        `Could not copy setup command: ${formatError(error, "Clipboard unavailable")}`,
+        TITLE,
+      );
+    }
   },
 
   dependencyStateLabel() {
@@ -156,6 +199,29 @@ const model = {
       return "Missing";
     }
     return this.status?.dependency_satisfied ? "Installed" : "Upgrade Needed";
+  },
+
+  dockerSetup() {
+    return this.status?.docker_setup || {
+      cli_available: false,
+      cli_source: "Missing",
+      endpoint_kind: "Not detected",
+      endpoint_present: false,
+      daemon_reachable: false,
+      setup_required: true,
+      requires_container_recreate: false,
+      setup_command: "./usr/plugins/rlm/setup/enable-docker-access.sh --apply",
+      risk: "",
+      last_probe: null,
+    };
+  },
+
+  dockerProbeStateLabel() {
+    const probe = this.dockerSetup().last_probe;
+    if (!probe) {
+      return "Not run";
+    }
+    return probe.success ? "Passed" : "Failed";
   },
 
   readiness() {

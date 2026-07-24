@@ -1,21 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import import_module
 import inspect
 import json
-import os
-import re
 from typing import Any
 from uuid import uuid4
 
+from usr.plugins.rlm.helpers.bootstrap import get_dependency_status
 from usr.plugins.rlm.helpers.config import get_run_store
 from usr.plugins.rlm.helpers.context_packer import PackedContext, pack_messages_for_rlm
+from usr.plugins.rlm.helpers.docker_setup import activate_docker_cli_shim
 from usr.plugins.rlm.helpers.environment import EnvironmentResolution, resolve_environment
 from usr.plugins.rlm.helpers.provider_mapping import ProviderMapping, map_agent_zero_config_to_rlm
+from usr.plugins.rlm.helpers.upstream_compat import apply_upstream_compatibility
 
 
 AGENT_ZERO_RLM_PROMPT_OVERLAY = """
@@ -23,31 +23,12 @@ Agent Zero specific instructions:
 - You are producing the single next assistant message for Agent Zero from the visible conversation and the offloaded external context.
 - Keep using the REPL and the recursive query tools from this prompt. When you need deeper reasoning over large offloaded blocks, cross-block synthesis, or a sub-problem that benefits from its own iterative reasoning, prefer `rlm_query` / `rlm_query_batched` over only one-shot calls.
 - Use `llm_query` for lightweight extraction or summarization. Use `rlm_query` for decomposition, deeper analysis, and recursive investigation.
-- When you finalize with `FINAL(...)` or `FINAL_VAR(...)`, the returned value must be exactly one of:
+- Submit the result through the upstream `answer` dictionary: set `answer["content"]`, then set `answer["ready"] = True`.
+- The submitted value must be exactly one of:
   1. the next assistant response text Agent Zero should send, or
   2. the exact JSON tool call object Agent Zero should consume next.
 - Do not wrap the final output in markdown fences, and do not mention RLM, recursion, or internal implementation details in the final output.
 """.strip()
-_BACKEND_ENV_EXPORTS = {
-    "anthropic": {
-        "api_key": "ANTHROPIC_API_KEY",
-    },
-    "azure_openai": {
-        "api_key": "AZURE_OPENAI_API_KEY",
-        "azure_endpoint": "AZURE_OPENAI_ENDPOINT",
-        "api_version": "AZURE_OPENAI_API_VERSION",
-        "azure_deployment": "AZURE_OPENAI_DEPLOYMENT",
-    },
-    "gemini": {
-        "api_key": "GEMINI_API_KEY",
-    },
-    "openrouter": {
-        "api_key": "OPENROUTER_API_KEY",
-    },
-    "portkey": {
-        "api_key": "PORTKEY_API_KEY",
-    },
-}
 
 
 @dataclass
@@ -100,6 +81,18 @@ class RLMChatWrapper:
         )
         if not packed.should_route:
             _log_auto_route_skip(self.agent, packed)
+            return await self.base_model.unified_call(**kwargs)
+
+        dependency_status = get_dependency_status()
+        if not dependency_status.get("dependency_satisfied", False):
+            _log_agent_event(
+                self.agent,
+                heading="RLM auto-routing unavailable",
+                content=(
+                    "The upstream RLM dependency is missing or outdated in the Agent Zero "
+                    "framework runtime."
+                ),
+            )
             return await self.base_model.unified_call(**kwargs)
 
         root_mapping = map_agent_zero_config_to_rlm(
@@ -175,7 +168,7 @@ class RLMChatWrapper:
 
 async def run_routed_completion(payload: RoutePayload) -> tuple[str, str]:
     completion, run_record = await _execute_rlm(payload, root_prompt=_default_root_prompt())
-    if payload.plugin_config.get("persistence_enabled", True):
+    if payload.plugin_config.get("persistence_enabled", False):
         get_run_store(payload.agent).save_run(run_record)
     return completion.get("response", ""), ""
 
@@ -187,7 +180,7 @@ async def run_manual_tool(payload: RoutePayload) -> dict[str, Any]:
         allow_limit_recovery=True,
         emit_limit_message=True,
     )
-    if payload.plugin_config.get("persistence_enabled", True):
+    if payload.plugin_config.get("persistence_enabled", False):
         get_run_store(payload.agent).save_run(run_record)
     return {"response": completion.get("response", ""), "run_record": run_record}
 
@@ -199,7 +192,8 @@ async def _execute_rlm(
     allow_limit_recovery: bool = False,
     emit_limit_message: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    _prime_backend_env_vars(payload.root_mapping, payload.subcall_mapping)
+    activate_docker_cli_shim()
+    apply_upstream_compatibility()
     RLM = _load_rlm_class()
     logger_cls = _load_rlm_logger_class()
 
@@ -244,35 +238,14 @@ async def _execute_rlm(
         },
     }
 
-    rlm = None
     try:
         rlm = RLM(**_filter_constructor_kwargs(RLM, rlm_kwargs))
         completion = await asyncio.to_thread(rlm.completion, context_payload, root_prompt)
     except Exception as exc:
-        if _should_retry_with_local_environment(payload, exc):
-            local_payload = replace(
-                payload,
-                environment=EnvironmentResolution(
-                    environment="local",
-                    environment_kwargs={},
-                    reason=(
-                        "Auto mode retried with local REPL after Docker environment "
-                        "startup failed."
-                    ),
-                    usable=True,
-                ),
-            )
-            return await _execute_rlm(
-                local_payload,
-                root_prompt=root_prompt,
-                allow_limit_recovery=allow_limit_recovery,
-                emit_limit_message=emit_limit_message,
-            )
         recovered = _recover_limit_result(
             payload,
             root_kwargs=root_kwargs,
             logger=logger,
-            rlm=rlm,
             exc=exc,
             allow_limit_recovery=allow_limit_recovery,
             emit_limit_message=emit_limit_message,
@@ -307,7 +280,6 @@ def _load_rlm_class():
         rlm_module = import_module("rlm")
     except Exception as exc:
         raise RuntimeError("RLM dependency is not installed.") from exc
-    _patch_rlm_runtime_safety()
     return rlm_module.RLM
 
 
@@ -329,29 +301,6 @@ def _build_agent_zero_system_prompt() -> str:
     if AGENT_ZERO_RLM_PROMPT_OVERLAY in base_prompt:
         return base_prompt
     return f"{base_prompt.rstrip()}\n\n{AGENT_ZERO_RLM_PROMPT_OVERLAY}"
-
-
-def _patch_rlm_runtime_safety() -> None:
-    _patch_rlm_openai_client_kwargs()
-    _patch_rlm_handler_responses()
-    _patch_rlm_direct_completion_paths()
-
-
-def _prime_backend_env_vars(*mappings: ProviderMapping | None) -> None:
-    for mapping in mappings:
-        if mapping is None or not mapping.supported:
-            continue
-        env_exports = _BACKEND_ENV_EXPORTS.get(mapping.backend or "", {})
-        backend_kwargs = dict(mapping.backend_kwargs or {})
-        for field_name, env_name in env_exports.items():
-            if os.environ.get(env_name):
-                continue
-            value = backend_kwargs.get(field_name)
-            if value is None:
-                continue
-            text = str(value).strip()
-            if text:
-                os.environ[env_name] = text
 
 
 def _log_auto_route_skip(agent: Any, packed: PackedContext) -> None:
@@ -387,130 +336,6 @@ def _log_agent_event(
         return
 
 
-def _patch_rlm_openai_client_kwargs() -> None:
-    try:
-        openai_client_module = import_module("rlm.clients.openai")
-    except Exception:
-        return
-
-    openai_client_cls = getattr(openai_client_module, "OpenAIClient", None)
-    if openai_client_cls is None or getattr(
-        openai_client_cls, "_a0_constructor_passthrough_patch_applied", False
-    ):
-        return
-
-    def patched_init(self, api_key=None, model_name=None, base_url=None, **kwargs):
-        openai_client_module.BaseLM.__init__(self, model_name=model_name, **kwargs)
-
-        if api_key is None:
-            if base_url == "https://api.openai.com/v1" or base_url is None:
-                api_key_value = getattr(openai_client_module, "DEFAULT_OPENAI_API_KEY", None)
-            elif base_url == "https://openrouter.ai/api/v1":
-                api_key_value = getattr(openai_client_module, "DEFAULT_OPENROUTER_API_KEY", None)
-            elif base_url == "https://ai-gateway.vercel.sh/v1":
-                api_key_value = getattr(openai_client_module, "DEFAULT_VERCEL_API_KEY", None)
-            elif base_url == getattr(
-                openai_client_module,
-                "DEFAULT_PRIME_INTELLECT_BASE_URL",
-                None,
-            ):
-                api_key_value = getattr(openai_client_module, "DEFAULT_PRIME_API_KEY", None)
-            else:
-                api_key_value = None
-            api_key = api_key_value
-
-        client_kwargs = {
-            "api_key": api_key,
-            "base_url": base_url,
-            "timeout": self.timeout,
-            **{key: value for key, value in self.kwargs.items() if key != "model_name"},
-        }
-        self.client = openai_client_module.openai.OpenAI(**client_kwargs)
-        self.async_client = openai_client_module.openai.AsyncOpenAI(**client_kwargs)
-        self.model_name = model_name
-        self.base_url = base_url
-
-        self.model_call_counts = defaultdict(int)
-        self.model_input_tokens = defaultdict(int)
-        self.model_output_tokens = defaultdict(int)
-        self.model_total_tokens = defaultdict(int)
-        self.model_costs = defaultdict(float)
-
-    openai_client_cls.__init__ = patched_init
-    openai_client_cls._a0_constructor_passthrough_patch_applied = True
-
-
-def _patch_rlm_handler_responses() -> None:
-    try:
-        lm_handler_module = import_module("rlm.core.lm_handler")
-    except Exception:
-        return
-
-    if getattr(lm_handler_module, "_a0_text_response_patch_applied", False):
-        return
-
-    original_completion = lm_handler_module.LMHandler.completion
-    original_handle_single = lm_handler_module.LMRequestHandler._handle_single
-    original_handle_batched = lm_handler_module.LMRequestHandler._handle_batched
-
-    def patched_completion(self, prompt, model=None):
-        return _normalize_text_response(original_completion(self, prompt, model))
-
-    def patched_handle_single(self, request, handler):
-        response = original_handle_single(self, request, handler)
-        _normalize_lm_response_object(response)
-        return response
-
-    def patched_handle_batched(self, request, handler):
-        response = original_handle_batched(self, request, handler)
-        _normalize_lm_response_object(response)
-        return response
-
-    lm_handler_module.LMHandler.completion = patched_completion
-    lm_handler_module.LMRequestHandler._handle_single = patched_handle_single
-    lm_handler_module.LMRequestHandler._handle_batched = patched_handle_batched
-    lm_handler_module._a0_text_response_patch_applied = True
-
-
-def _patch_rlm_direct_completion_paths() -> None:
-    try:
-        rlm_core_module = import_module("rlm.core.rlm")
-    except Exception:
-        return
-
-    rlm_class = getattr(rlm_core_module, "RLM", None)
-    if rlm_class is None or getattr(rlm_class, "_a0_text_response_patch_applied", False):
-        return
-
-    original_fallback_answer = rlm_class._fallback_answer
-    original_subcall = rlm_class._subcall
-
-    def patched_fallback_answer(self, message):
-        return _normalize_text_response(original_fallback_answer(self, message))
-
-    def patched_subcall(self, prompt, model=None):
-        completion = original_subcall(self, prompt, model)
-        if completion is not None and hasattr(completion, "response"):
-            completion.response = _normalize_text_response(getattr(completion, "response", ""))
-        return completion
-
-    rlm_class._fallback_answer = patched_fallback_answer
-    rlm_class._subcall = patched_subcall
-    rlm_class._a0_text_response_patch_applied = True
-
-
-def _normalize_lm_response_object(response: Any) -> None:
-    if response is None:
-        return
-    chat_completion = getattr(response, "chat_completion", None)
-    if chat_completion is not None and hasattr(chat_completion, "response"):
-        chat_completion.response = _normalize_text_response(getattr(chat_completion, "response", ""))
-    chat_completions = getattr(response, "chat_completions", None) or []
-    for item in chat_completions:
-        if item is not None and hasattr(item, "response"):
-            item.response = _normalize_text_response(getattr(item, "response", ""))
-
-
 def _normalize_text_response(value: Any) -> str:
     if value is None:
         return ""
@@ -527,9 +352,6 @@ async def _prepare_agent_zero_response(
     trajectory: dict[str, Any] | None,
 ) -> tuple[str, str | None]:
     normalized = _normalize_text_response(response_text).strip()
-    extracted = _extract_wrapped_final_answer(normalized)
-    if extracted is not None:
-        normalized = extracted
 
     if not _response_needs_finalization(normalized):
         return normalized, None
@@ -563,9 +385,6 @@ async def _prepare_agent_zero_response(
         return normalized, None
 
     finalized_text = _normalize_text_response(finalized).strip()
-    extracted = _extract_wrapped_final_answer(finalized_text)
-    if extracted is not None:
-        finalized_text = extracted
     if not finalized_text:
         return normalized, None
 
@@ -575,21 +394,6 @@ async def _prepare_agent_zero_response(
         content="Agent Zero converted an internal RLM draft into a final assistant response.",
     )
     return finalized_text, "finalizer_model"
-
-
-def _extract_wrapped_final_answer(text: str) -> str | None:
-    if not text:
-        return None
-
-    final_match = re.search(r"^\s*FINAL\((.*)\)\s*$", text, re.MULTILINE | re.DOTALL)
-    if final_match:
-        return final_match.group(1).strip()
-
-    final_var_match = re.search(r"^\s*FINAL_VAR\((.*)\)\s*$", text, re.MULTILINE | re.DOTALL)
-    if final_var_match:
-        return None
-
-    return None
 
 
 def _response_needs_finalization(text: str) -> bool:
@@ -608,9 +412,9 @@ def _response_needs_finalization(text: str) -> bool:
         "llm_query_batched(",
         "rlm_query(",
         "rlm_query_batched(",
-        "final(",
-        "final_var(",
         "show_vars(",
+        'answer["ready"]',
+        "answer['ready']",
     )
     return any(marker in lowered for marker in internal_markers)
 
@@ -725,7 +529,6 @@ def _recover_limit_result(
     *,
     root_kwargs: dict[str, Any],
     logger: Any,
-    rlm: Any,
     exc: Exception,
     allow_limit_recovery: bool,
     emit_limit_message: bool,
@@ -738,9 +541,6 @@ def _recover_limit_result(
         return None
 
     partial_answer = _normalize_text_response(getattr(exc, "partial_answer", None))
-    if not partial_answer and rlm is not None:
-        partial_answer = _normalize_text_response(getattr(rlm, "_best_partial_answer", None))
-
     response_text = partial_answer
     if not response_text and emit_limit_message:
         response_text = _format_limit_message(status, exc)
@@ -820,25 +620,6 @@ def _format_limit_message(status: str, exc: Exception) -> str:
     prefix = labels.get(status, "RLM stopped before it completed.")
     detail = str(exc).strip()
     return f"{prefix} {detail}".strip()
-
-
-def _should_retry_with_local_environment(payload: RoutePayload, exc: Exception) -> bool:
-    if payload.environment.environment != "docker":
-        return False
-    if str(payload.plugin_config.get("environment_mode", "auto") or "auto").lower() != "auto":
-        return False
-    message = str(exc or "").lower()
-    if not message:
-        return False
-    docker_failure_markers = (
-        "failed to start container",
-        "docker",
-        "cpuset",
-        "read-only file system",
-        "permission denied",
-        "cannot connect to the docker daemon",
-    )
-    return any(marker in message for marker in docker_failure_markers)
 
 
 def _attach_callbacks(payload: RoutePayload, rlm_kwargs: dict[str, Any]) -> None:

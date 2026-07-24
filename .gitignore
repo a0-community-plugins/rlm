@@ -1,0 +1,8 @@
+config.json
+.toggle-*
+data/
+execute_record.json
+__pycache__/
+*.py[cod]
+.DS_Store
+webui/thumbnail.png

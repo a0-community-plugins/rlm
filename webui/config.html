@@ -20,7 +20,7 @@
                 <details class="field">
                     <summary class="field-title">Expand for examples and behavior notes</summary>
                     <div class="field-description" style="margin-top: 0.5rem;">
-                        Auto-routing is best for large logs, big tool output, and many attached docs. The <code>rlm_context</code> tool is the explicit path when the agent wants long-context analysis on purpose. Ordinary short turns should stay on the normal model path.
+                        Auto-routing is best for large logs, big tool output, and many attached docs. The <code>rlm</code> tool is the explicit path when the agent wants long-context analysis on purpose. Ordinary short turns should stay on the normal model path.
                     </div>
                 </details>
 
@@ -43,7 +43,7 @@
                     <div class="field-label">
                         <div class="field-title">Manual tool enabled</div>
                         <div class="field-description">
-                            Allow the agent to invoke the <code>rlm_context</code> tool explicitly for focused long-context analysis.
+                            Allow the agent to invoke the <code>rlm</code> tool explicitly for focused long-context analysis.
                         </div>
                     </div>
                     <div class="field-control">
@@ -51,21 +51,6 @@
                             <input type="checkbox" x-model="config.manual_tool_enabled" />
                             <span class="toggler"></span>
                         </label>
-                    </div>
-                </div>
-
-                <div class="field">
-                    <div class="field-label">
-                        <div class="field-title">Framework dependency install</div>
-                        <div class="field-description">
-                            Install, upgrade, or repair the pinned upstream RLM dependency in the Agent Zero framework runtime. This is the same runtime used by the plugin backend and the plugin list Execute action.
-                        </div>
-                    </div>
-                    <div class="field-control">
-                        <button class="btn btn-field"
-                                @click="(async () => { const { store } = await import('/components/plugins/list/plugin-execute-store.js'); await store.open({ name: 'rlm', display_name: 'RLM' }); })()">
-                            Install Dependencies
-                        </button>
                     </div>
                 </div>
 
@@ -113,14 +98,14 @@
 
                 <div class="section-title">Execution</div>
                 <div class="section-description">
-                    Configure how the recursive worker runs and where it executes.
+                    Configure how the recursive worker runs and where it executes. The RLM Context Explorer includes Docker CLI, endpoint, and nested-sandbox diagnostics plus a one-command Compose setup path.
                 </div>
 
                 <div class="field">
                     <div class="field-label">
                         <div class="field-title">Environment mode</div>
                         <div class="field-description">
-                            Auto prefers Docker when available, otherwise local REPL execution. Docker mode falls back cleanly if it is unavailable.
+                            Auto requires an isolated Docker REPL and blocks RLM routing when Docker is unavailable. Local mode is an explicit opt-in that executes model-generated Python in the Agent Zero framework process.
                         </div>
                     </div>
                     <div class="field-control">
@@ -245,14 +230,14 @@
 
                 <div class="section-title">Persistence</div>
                 <div class="section-description">
-                    Save recent trajectories so you can inspect recursive runs from the dashboard.
+                    Optionally save recent trajectories so you can inspect recursive runs from the dashboard. This is off by default because trajectories may contain prompt or model-output excerpts.
                 </div>
 
                 <div class="field">
                     <div class="field-label">
                         <div class="field-title">Persistence enabled</div>
                         <div class="field-description">
-                            Store run summaries and trajectory payloads inside the plugin-owned data directory.
+                            Store run summaries and trajectory payloads inside the plugin-owned data directory. Enable only when local retention of this content is appropriate.
                         </div>
                     </div>
                     <div class="field-control">

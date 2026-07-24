@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from pathlib import Path
-import subprocess
+
+from usr.plugins.rlm.helpers.docker_setup import (
+    docker_info_available,
+    has_docker_endpoint,
+)
+from usr.plugins.rlm.helpers.docker_shim import detect_containerized_runtime
 
 
 @dataclass
@@ -14,38 +18,12 @@ class EnvironmentResolution:
     usable: bool = True
 
 
-def detect_containerized_runtime() -> bool:
-    if Path("/.dockerenv").exists():
-        return True
-    cgroup = Path("/proc/1/cgroup")
-    if not cgroup.exists():
-        return False
-    try:
-        text = cgroup.read_text(encoding="utf-8", errors="ignore")
-    except Exception:
-        return False
-    return "docker" in text or "containerd" in text or "kubepods" in text
-
-
 def is_docker_available(timeout: float = 2.0) -> bool:
-    try:
-        result = subprocess.run(
-            ["docker", "info"],
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-            text=True,
-        )
-    except Exception:
-        return False
-    return result.returncode == 0
+    return docker_info_available(timeout=timeout)
 
 
 def has_external_docker_access() -> bool:
-    docker_host = str(os.getenv("DOCKER_HOST", "") or "").strip()
-    if docker_host:
-        return True
-    return Path("/var/run/docker.sock").exists()
+    return has_docker_endpoint()
 
 
 def resolve_environment(config: dict | None) -> EnvironmentResolution:
@@ -57,7 +35,14 @@ def resolve_environment(config: dict | None) -> EnvironmentResolution:
     docker_accessible_from_container = has_external_docker_access()
 
     if mode == "local":
-        return EnvironmentResolution("local", {}, reason="Configured for local REPL.")
+        return EnvironmentResolution(
+            "local",
+            {},
+            reason=(
+                "Local REPL was explicitly selected. It executes model-generated Python "
+                "inside the Agent Zero framework process without Docker isolation."
+            ),
+        )
 
     if mode == "docker":
         if docker_available and (not containerized_runtime or docker_accessible_from_container):
@@ -76,12 +61,14 @@ def resolve_environment(config: dict | None) -> EnvironmentResolution:
     if docker_available:
         if containerized_runtime and not docker_accessible_from_container:
             return EnvironmentResolution(
-                "local",
+                "docker",
                 {},
                 reason=(
-                    "Auto mode fell back to local REPL inside a containerized runtime "
-                    "because Docker is not externally accessible."
+                    "Auto mode requires an isolated Docker REPL, but this container cannot "
+                    "reach an external Docker daemon. Mount the Docker socket or explicitly "
+                    "opt into local mode after reviewing its security implications."
                 ),
+                usable=False,
             )
         return EnvironmentResolution(
             "docker",
@@ -91,13 +78,23 @@ def resolve_environment(config: dict | None) -> EnvironmentResolution:
 
     if containerized_runtime:
         return EnvironmentResolution(
-            "local",
+            "docker",
             {},
-            reason="Auto mode fell back to local REPL inside a containerized runtime because Docker is unavailable.",
+            reason=(
+                "Auto mode requires an isolated Docker REPL, but Docker is unavailable "
+                "inside this Agent Zero container. Mount the Docker socket or explicitly "
+                "opt into local mode after reviewing its security implications."
+            ),
+            usable=False,
         )
 
     return EnvironmentResolution(
-        "local",
+        "docker",
         {},
-        reason="Auto mode fell back to local REPL because Docker is unavailable.",
+        reason=(
+            "Auto mode requires an isolated Docker REPL, but Docker is unavailable. "
+            "Install Docker or explicitly opt into local mode after reviewing its "
+            "security implications."
+        ),
+        usable=False,
     )
