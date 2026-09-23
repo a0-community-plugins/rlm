@@ -1,11 +1,17 @@
+# OPTIONAL OVERRIDE, not a standalone application. Merge AFTER your existing
+# Compose file. Its service must be named agent-zero (otherwise rename below).
+# Keep the existing data mount and ports in that file. See setup/README.md.
 services:
   agent-zero:
     image: ${RLM_AGENT_ZERO_IMAGE:-agent-zero-rlm:local}
     environment:
       DOCKER_HOST: unix:///var/run/docker.sock
-      RLM_AGENT_ZERO_CONTAINER: ${RLM_AGENT_ZERO_CONTAINER:-}
-      RLM_DOCKER_NETWORK: ${RLM_DOCKER_NETWORK:-}
+      RLM_REAL_DOCKER_BIN: /usr/local/bin/docker
+      RLM_DOCKER_WORKSPACE_DIR: /a0/usr/plugins/rlm/data/workspaces
     volumes:
       - type: bind
+        # Daemon-side socket: Desktop resolves this inside its Linux VM.
         source: ${RLM_DOCKER_SOCKET:-/var/run/docker.sock}
         target: /var/run/docker.sock
+        bind:
+          create_host_path: false

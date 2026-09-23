@@ -160,11 +160,11 @@ def _rewrite_workspace_mounts(
     mounts: Any,
 ) -> list[str]:
     rewritten = list(args)
-    bind_mounts = [
+    shared_mounts = [
         mount
         for mount in mounts
         if isinstance(mount, dict)
-        and mount.get("Type") == "bind"
+        and mount.get("Type") in ("bind", "volume")
         and mount.get("Source")
         and mount.get("Destination")
     ]
@@ -175,21 +175,23 @@ def _rewrite_workspace_mounts(
         source, separator, remainder = specification.partition(":")
         if not separator or not source.startswith("/"):
             continue
-        translated = _translate_bind_source(source, bind_mounts)
+        translated = _translate_bind_source(source, shared_mounts)
         if translated:
             rewritten[index + 1] = f"{translated}:{remainder}"
             continue
         if remainder.startswith("/workspace"):
             raise RuntimeError(
-                "The RLM workspace is not inside a bind mount visible to the "
-                "external Docker daemon. Bind-mount Agent Zero's /a0 directory "
-                "from the host before running the Docker sandbox."
+                "The RLM workspace is not inside a shared data mount visible to "
+                "the Docker daemon. Run Docker Desktop setup from the RLM Context "
+                "Explorer, or mount /a0/usr using a host directory or Docker volume."
             )
     return rewritten
 
 
 def _translate_bind_source(source: str, mounts: list[dict[str, Any]]) -> str | None:
     candidate = PurePosixPath(source)
+    if ".." in candidate.parts:
+        raise RuntimeError("RLM workspace paths must not contain parent traversal.")
     matches: list[tuple[int, PurePosixPath, PurePosixPath]] = []
     for mount in mounts:
         destination = PurePosixPath(str(mount["Destination"]))

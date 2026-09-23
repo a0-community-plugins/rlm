@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shlex
 import socket
 import subprocess
 import tempfile
@@ -21,7 +22,6 @@ DOCKER_SHIM_DIR = PLUGIN_ROOT / "bin"
 DOCKER_SHIM_PATH = DOCKER_SHIM_DIR / "docker"
 PROBE_ROOT = PLUGIN_ROOT / "data" / "docker-probes"
 PROBE_RECORD = PLUGIN_ROOT / "data" / "docker-probe.json"
-SETUP_COMMAND = "./usr/plugins/rlm/setup/enable-docker-access.sh --apply"
 SOCKET_RISK = (
     "A raw Docker socket is effectively root-level control of the Docker host. "
     "Only expose it to a trusted Agent Zero deployment, or use a hardened Docker "
@@ -30,6 +30,9 @@ SOCKET_RISK = (
 
 
 def activate_docker_cli_shim() -> str:
+    # Upstream 0.1.3 defaults to /a0/.rlm_workspace, outside the data mount in
+    # current Docker Desktop/launcher installations that persist only /a0/usr.
+    os.environ.setdefault("RLM_DOCKER_WORKSPACE_DIR", str(PLUGIN_ROOT / "data" / "workspaces"))
     if not DOCKER_SHIM_PATH.is_file():
         return ""
     shim_dir = str(DOCKER_SHIM_DIR)
@@ -97,11 +100,30 @@ def get_docker_setup_status() -> dict[str, Any]:
         "requires_container_recreate": bool(
             containerized and (not real_docker or not endpoint_present)
         ),
-        "setup_command": SETUP_COMMAND,
-        "compose_overlay": "usr/plugins/rlm/setup/docker-compose.rlm.yml",
+        "setup_command": setup_commands()["shell"],
+        "setup_commands": setup_commands(),
         "risk": SOCKET_RISK,
         "last_probe": probe,
     }
+
+
+def setup_commands() -> dict[str, str]:
+    """Copy setup from the installed plugin; no host checkout path is assumed."""
+    target = os.getenv("RLM_AGENT_ZERO_CONTAINER") or os.getenv("HOSTNAME") or "YOUR_AGENT_ZERO_CONTAINER"
+    source = f"{target}:{PLUGIN_ROOT}/setup/."
+    shell = (
+        "mkdir -p ./rlm-setup && "
+        f"docker cp {shlex.quote(source)} ./rlm-setup/ && "
+        f"sh ./rlm-setup/enable-docker-access.sh --container {shlex.quote(target)} --apply"
+    )
+    ps_quote = lambda value: "'" + value.replace("'", "''") + "'"
+    powershell = (
+        "New-Item -ItemType Directory -Force ./rlm-setup | Out-Null; "
+        f"docker cp {ps_quote(source)} ./rlm-setup/; "
+        "if ($LASTEXITCODE -eq 0) { powershell -NoProfile -ExecutionPolicy Bypass "
+        f"-File ./rlm-setup/enable-docker-access.ps1 -Container {ps_quote(target)} -Apply }}"
+    )
+    return {"shell": shell, "powershell": powershell}
 
 
 def run_docker_sandbox_probe(

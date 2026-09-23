@@ -23,7 +23,7 @@ class RepositoryContractTests(unittest.TestCase):
     def test_manifest_identity_and_version_match_repository(self):
         manifest = (PLUGIN_ROOT / "plugin.yaml").read_text(encoding="utf-8")
         self.assertIn("name: rlm", manifest)
-        self.assertIn('version: "2.0.0"', manifest)
+        self.assertIn('version: "2.0.1"', manifest)
 
     def test_runtime_configuration_is_not_committed_as_source(self):
         self.assertFalse((PLUGIN_ROOT / "config.json").exists())

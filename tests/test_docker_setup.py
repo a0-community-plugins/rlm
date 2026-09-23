@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import unittest
+import os
 from unittest.mock import patch
 
 import support  # noqa: F401
@@ -57,6 +58,18 @@ class DockerShimTests(unittest.TestCase):
             rewritten,
         )
 
+    def test_usr_only_mount_and_named_volume_are_supported(self):
+        for mount_type, root in (("bind", "/host/data"), ("volume", "/var/lib/docker/volumes/a0/_data")):
+            with self.subTest(mount_type=mount_type):
+                inspection = _inspection()
+                inspection["Mounts"] = [{"Type": mount_type, "Source": root, "Destination": "/a0/usr"}]
+                result = rewrite_rlm_run_args(["run", "-v", "/a0/usr/plugins/rlm/data/workspaces/run:/workspace", "--add-host", "host.docker.internal:host-gateway", "python"], inspection)
+                self.assertIn(f"{root}/plugins/rlm/data/workspaces/run:/workspace", result)
+
+    def test_parent_traversal_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "parent traversal"):
+            rewrite_rlm_run_args(["run", "-v", "/a0/../private:/workspace", "--add-host", "host.docker.internal:host-gateway", "python"], _inspection())
+
     def test_unrelated_docker_commands_are_not_changed(self):
         args = ["run", "--rm", "hello-world"]
         self.assertEqual(rewrite_rlm_run_args(args, _inspection()), args)
@@ -75,7 +88,7 @@ class DockerShimTests(unittest.TestCase):
             )
 
     def test_workspace_must_be_visible_to_external_daemon(self):
-        with self.assertRaisesRegex(RuntimeError, "not inside a bind mount"):
+        with self.assertRaisesRegex(RuntimeError, "not inside a shared data mount"):
             rewrite_rlm_run_args(
                 [
                     "run",
@@ -110,6 +123,19 @@ class DockerSetupTests(unittest.TestCase):
         self.assertTrue(status["daemon_reachable"])
         self.assertFalse(status["setup_required"])
         self.assertEqual(status["cli_source"], "RLM derived image")
+
+    def test_workspace_default_is_inside_persistent_plugin_data(self):
+        with patch.dict(os.environ, {}, clear=True):
+            docker_setup.activate_docker_cli_shim()
+            self.assertEqual(os.environ["RLM_DOCKER_WORKSPACE_DIR"], str(PLUGIN_ROOT / "data/workspaces"))
+
+    def test_setup_commands_copy_from_container_without_host_checkout(self):
+        with patch.dict(os.environ, {"RLM_AGENT_ZERO_CONTAINER": "my-agent"}):
+            commands = docker_setup.setup_commands()
+        self.assertIn("docker cp", commands["shell"])
+        self.assertIn("--container my-agent --apply", commands["shell"])
+        self.assertIn("enable-docker-access.ps1", commands["powershell"])
+        self.assertIn("$LASTEXITCODE -eq 0", commands["powershell"])
 
     def test_repository_ships_host_setup_and_compose_overlay(self):
         script = PLUGIN_ROOT / "setup" / "enable-docker-access.sh"

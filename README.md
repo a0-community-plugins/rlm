@@ -4,7 +4,7 @@ Recursive long-context analysis for Agent Zero, powered by
 [`alexzhang13/rlm`](https://github.com/alexzhang13/rlm).
 
 The plugin keeps Agent Zero in control of the conversation while selectively
-offloading oversized external material to an RLM worker. Version 2.0.0 targets
+offloading oversized external material to an RLM worker. Version 2.0.1 targets
 the stable upstream `rlms==0.1.3` package and its `answer["content"]` /
 `answer["ready"]` completion contract. A narrow compatibility adapter treats
 nullable token-usage values from OpenAI-compatible OAuth proxies as unknown
@@ -28,71 +28,62 @@ to the normal model without modifying Agent Zero core code.
 The `rlm` tool provides an explicit route for recursive analysis over recent
 Agent Zero history.
 
-## Installation
+## Installation — Docker Desktop
 
-Copy or clone this repository to:
+1. In Agent Zero, open **Plugins → Install Plugin → Git**, paste
+   `https://github.com/a0-community-plugins/rlm`, and install/enable **RLM**.
+2. Open **RLM Context Explorer**. Under **Set up Docker Desktop**, select
+   **macOS / Linux** or **Windows**, then click **Copy Setup Command**.
+3. Paste it into **your computer's Terminal or PowerShell** and confirm.
+   Keep Docker Desktop running. Do **not** use Agent Zero's terminal or the
+   container's Exec tab.
+4. Wait for **RLM Docker setup passed**, then reopen Agent Zero at the same
+   address. The sandbox check runs automatically.
 
-```text
-usr/plugins/rlm
-```
+**No Compose file, host Python installation, repository checkout, or hand-edited
+Docker paths are required.** The copied command gets the setup files directly
+from your installed plugin. First setup downloads the Docker CLI and a small
+sandbox image; later runs reuse them.
 
-Enable the plugin in Agent Zero. Its install hook automatically installs
-`rlms==0.1.3` into the Agent Zero framework Python environment, so there is no
-second setup command. In the standard dual-venv Docker image the hook targets
-`/opt/venv-a0/bin/python3`; it does not accidentally install only into the
-separate agent execution environment.
+Setup briefly restarts the selected container. It preserves its web port, data
+mounts, environment, networks, and installed software. It supports both
+`/a0/usr` and older `/a0` mounts, including Docker named volumes. If data is only
+inside the container, setup preserves it in a new persistent Docker volume.
+The original container is kept stopped as a rollback copy, and a failed setup
+restores it automatically. See [setup details and rollback](setup/README.md).
 
-There is no separate Execute step. Installation, update setup, module cleanup,
-and removal cleanup are owned by `hooks.py`. If automatic setup is interrupted,
-the Context Explorer exposes **Retry Setup**, which invokes the same install
-hook and refreshes readiness.
+Docker access lets Agent Zero manage Docker containers and access shared host
+files. The setup command explains this before asking you to continue. Docker
+cannot add a mount to an existing container from the plugin UI, which is why
+this one host-terminal step is necessary. Local snapshot images can contain
+private data; **never publish them**.
 
-Restart Agent Zero after upgrading an RLM dependency that was already loaded.
+The plugin install hook automatically installs `rlms==0.1.3` into Agent Zero's
+framework Python (`/opt/venv-a0/bin/python3` in the standard image). If that step
+was interrupted, click **Retry Setup** in the Explorer. This button repairs the
+Python dependency; it cannot grant Docker access. Restart Agent Zero after
+upgrading a dependency that was already loaded.
+There is no separate Execute step.
+
+For an existing installation, update RLM first to get these setup controls.
+Advanced users who manage Compose can use the optional
+[Dockerfile and Compose override](setup/README.md#optional-compose-setup).
 
 ## Execution Safety
 
-`auto` and `docker` modes require Docker. They do not silently downgrade to the
-upstream LocalREPL because LocalREPL executes model-generated Python inside the
-Agent Zero framework process and does not provide process, filesystem, or
-network isolation.
+`auto` and `docker` modes require Docker and never silently switch to `local`.
+Local mode executes generated Python in Agent Zero's own framework process and
+is an explicit opt-in for trusted development workloads only.
 
-When Agent Zero itself runs in Docker, the RLM Docker environment needs access
-to an external Docker daemon, commonly through a carefully controlled Docker
-socket mount. Docker socket access is highly privileged; use a hardened proxy or
-equivalent isolation appropriate to your deployment.
+The Explorer reports Docker CLI, endpoint, daemon, and sandbox-probe status
+separately. A passing probe verifies shared files and the callback connection
+from an actual sandbox; a complete model run also needs a configured provider.
+RLM's shim joins the sandbox to Agent Zero's network, directs its callback to
+Agent Zero, and translates the workspace to the daemon's shared data path.
+Only the run's workspace is mounted in the sandbox, not the entire data volume.
 
-The **RLM Context Explorer** separates Docker CLI, endpoint, daemon, and sandbox
-probe status instead of treating a mounted socket as sufficient. For the
-standard `agent-zero` Compose service, the plugin ships a host-side helper:
-
-```bash
-./usr/plugins/rlm/setup/enable-docker-access.sh --apply
-```
-
-The helper starts with read-only validation, asks before changing anything,
-builds a small Agent Zero-derived image containing the official Docker CLI, and
-recreates only that Compose service with the selected Unix socket mounted. Use
-`--help` to select a Compose file, base image, socket, or derived image name.
-
-Upstream RLM starts a nested sandbox and calls back to a short-lived proxy in
-the Agent Zero process. The plugin-owned Docker CLI shim joins that sandbox to
-Agent Zero's existing Docker network, maps `host.docker.internal` to the Agent
-Zero container, and translates the temporary workspace from its in-container
-path to the corresponding host bind path. Other Docker commands pass through
-unchanged. The Explorer's **Run Sandbox Probe** action verifies the CLI, daemon,
-image, bind mount, and callback path together before a real model run.
-
-An already-running container cannot gain a new bind mount. Non-Compose or
-custom service layouts therefore require an equivalent host-side recreation:
-provide a Docker CLI in the Agent Zero image, mount the Docker endpoint at
-`/var/run/docker.sock` (or configure `DOCKER_HOST`), and keep `/a0` backed by a
-host bind mount so nested workspaces can be shared.
-
-`local` mode remains available as an explicit informed opt-in for trusted,
-development-only workloads. Do not use it with untrusted prompts or documents.
-
-Attachment ingestion is restricted to Agent Zero's `usr/uploads` directory and
-rejects symlink escapes. Other local paths are never read as RLM attachments.
+Attachment ingestion is restricted to Agent Zero's `usr/uploads` directory
+and rejects symlink escapes. Other local paths are not read as attachments.
 
 ## Configuration
 
