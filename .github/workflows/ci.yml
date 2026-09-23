@@ -1,6 +1,12 @@
 name: Plugin checks
 
 "on":
+  workflow_dispatch:
+    inputs:
+      docker_integration:
+        description: Run real Docker installer tests with synthetic containers
+        type: boolean
+        default: false
   pull_request:
   push:
     branches:
@@ -51,3 +57,33 @@ jobs:
 
       - name: Check Python syntax
         run: python -m compileall -q .
+
+  powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate Windows launcher syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/setup/enable-docker-access.ps1", [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count) { $errors | Write-Error; exit 1 }
+
+  docker-integration:
+    if: github.event_name == 'workflow_dispatch' && inputs.docker_integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Get framework image
+        run: docker pull agent0ai/agent-zero:latest
+      - name: Test install, rollback, data migration, and repeated setup
+        env:
+          RLM_DOCKER_INTEGRATION: "1"
+        run: python -m unittest discover -s tests -p test_desktop_integration.py -v

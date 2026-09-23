@@ -210,20 +210,25 @@
                                  x-text="$store.rlmContextDashboard.dockerSetup().risk"></div>
                             <template x-if="$store.rlmContextDashboard.dockerSetup().setup_required">
                                 <details class="rcd-readiness-shell" open>
-                                    <summary class="rcd-mini-label">One-command Compose setup</summary>
+                                    <summary class="rcd-mini-label">Set up Docker Desktop</summary>
                                     <div class="rcd-readiness-copy">
-                                        Run this from the Agent Zero repository on the Docker host. It performs a read-only check first, asks for confirmation, builds a small derived image containing the Docker CLI, and recreates only the standard <code>agent-zero</code> service with the selected socket.
+                                        Copy this command into your computer's Terminal or PowerShell while Docker Desktop is running. It copies setup from this container, asks before restarting Agent Zero, preserves your data and ports, and checks the sandbox automatically. No Compose file or Python installation is needed.
                                     </div>
+                                    <label class="rcd-mini-label" for="rlm-setup-platform">Your computer</label>
+                                    <select id="rlm-setup-platform" x-model="$store.rlmContextDashboard.dockerSetupPlatform">
+                                        <option value="shell">macOS / Linux — Terminal</option>
+                                        <option value="powershell">Windows — PowerShell</option>
+                                    </select>
                                     <pre class="rcd-command"
-                                         x-text="$store.rlmContextDashboard.dockerSetup().setup_command"></pre>
+                                         x-text="$store.rlmContextDashboard.dockerSetupCommand()"></pre>
                                     <div class="rcd-action-row">
                                         <button class="btn btn-field"
                                                 @click="$store.rlmContextDashboard.copyDockerSetupCommand()">
-                                            Copy Host Command
+                                            Copy Setup Command
                                         </button>
                                     </div>
                                     <div class="rcd-readiness-copy">
-                                        If your deployment uses a different Compose file or service layout, run the script with <code>--help</code>. A running container cannot add a mount to itself, so recreation is the only non-manual step the UI cannot perform safely.
+                                        Use your computer's terminal, not Agent Zero's terminal or Docker Desktop's Exec tab. Your current container is kept as a stopped rollback copy. If Docker cannot find the container, replace its ID in the command with the name shown in Docker Desktop.
                                     </div>
                                 </details>
                             </template>

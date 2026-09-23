@@ -1,7 +1,12 @@
-ARG DOCKER_CLI_IMAGE=docker:cli
+# Optional image for users who maintain their own Compose deployment.
+# Build with setup/ as the context; neither an Agent Zero checkout nor /a0 on
+# the host is required. The primary Docker Desktop installer does not use this.
+ARG DOCKER_CLI_IMAGE=docker:28-cli
 ARG A0_BASE_IMAGE=agent0ai/agent-zero:latest
-
 FROM ${DOCKER_CLI_IMAGE} AS docker_cli
 FROM ${A0_BASE_IMAGE}
 
-COPY --from=docker_cli /usr/local/bin/docker /usr/local/libexec/rlm-docker/docker
+# COPY creates the destination directory in the image. It is not a host path.
+COPY --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker
+ENV RLM_DOCKER_WORKSPACE_DIR=/a0/usr/plugins/rlm/data/workspaces
+RUN /usr/local/bin/docker --version

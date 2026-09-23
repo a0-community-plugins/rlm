@@ -179,7 +179,7 @@ const model = {
   },
 
   async copyDockerSetupCommand() {
-    const command = this.dockerSetup().setup_command;
+    const command = this.dockerSetupCommand();
     if (!command) {
       return;
     }
@@ -210,10 +210,17 @@ const model = {
       daemon_reachable: false,
       setup_required: true,
       requires_container_recreate: false,
-      setup_command: "./usr/plugins/rlm/setup/enable-docker-access.sh --apply",
+      setup_command: "",
       risk: "",
       last_probe: null,
     };
+  },
+
+  dockerSetupPlatform: /Win/i.test(navigator.platform || "") ? "powershell" : "shell",
+
+  dockerSetupCommand() {
+    return this.dockerSetup().setup_commands?.[this.dockerSetupPlatform]
+      || this.dockerSetup().setup_command || "Refresh status to get the setup command.";
   },
 
   dockerProbeStateLabel() {
